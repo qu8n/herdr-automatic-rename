@@ -1,0 +1,8 @@
+# Editor / OS cruft
+.DS_Store
+*.swp
+*~
+
+# Test scratch (mktemp sandboxes clean themselves, but ignore any stragglers)
+tests/tmp/
+*.tmp
