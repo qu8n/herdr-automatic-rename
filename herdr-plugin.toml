@@ -1,0 +1,123 @@
+id = "herdr-automatic-rename"
+name = "Herdr Automatic Rename"
+version = "0.1.0"
+min_herdr_version = "0.7.1"
+description = "Auto-name tabs after the foreground program and/or prefix workspaces, tabs, and agents with their 1-9 jump-key number. Each feature toggles via config.sh."
+platforms = ["linux", "macos"]
+
+# One unified reconcile handles both features, so every event runs the SAME
+# entry (automatic-rename.sh) with the event name as argv[1], and the pass is
+# idempotent. Real-time per-command tab renaming comes from the shell hooks
+# under shell/ (see the README), because herdr has no "foreground command
+# changed" event.
+
+# --- Workspaces: order changes (alt+N target) or label edits ---
+[[events]]
+on = "workspace.created"
+command = ["bash", "automatic-rename.sh", "workspace.created"]
+
+[[events]]
+on = "workspace.closed"
+command = ["bash", "automatic-rename.sh", "workspace.closed"]
+
+[[events]]
+on = "workspace.renamed"
+command = ["bash", "automatic-rename.sh", "workspace.renamed"]
+
+# herdr 0.7.3 added a drag-reorder event (0.7.1 had none). alt+N follows the
+# sidebar order, so a reorder must renumber; the reconcile is idempotent.
+[[events]]
+on = "workspace.moved"
+command = ["bash", "automatic-rename.sh", "workspace.moved"]
+
+# --- Worktrees: reorder the grouped/visible workspace order, can add/remove one ---
+[[events]]
+on = "worktree.created"
+command = ["bash", "automatic-rename.sh", "worktree.created"]
+
+[[events]]
+on = "worktree.opened"
+command = ["bash", "automatic-rename.sh", "worktree.opened"]
+
+[[events]]
+on = "worktree.removed"
+command = ["bash", "automatic-rename.sh", "worktree.removed"]
+
+# --- Tabs: naming (foreground program) and numbering (cmd+N array order) ---
+[[events]]
+on = "tab.created"
+command = ["bash", "automatic-rename.sh", "tab.created"]
+
+# tab.closed gets special handling: the entry waits for herdr to drop the closing
+# tab before reconciling, so survivors renumber against the settled list.
+[[events]]
+on = "tab.closed"
+command = ["bash", "automatic-rename.sh", "tab.closed"]
+
+# Re-apply on a user rename (alt+r). Our own rename also re-fires this; the
+# idempotent skip-if-correct guard stops the loop.
+[[events]]
+on = "tab.renamed"
+command = ["bash", "automatic-rename.sh", "tab.renamed"]
+
+# herdr 0.7.3 added a drag-reorder event. cmd+N indexes a workspace's tabs by
+# array order, so a reorder must renumber (idempotent).
+[[events]]
+on = "tab.moved"
+command = ["bash", "automatic-rename.sh", "tab.moved"]
+
+# The interactive close_pane keybind (cmd+w) does NOT deliver tab.closed to
+# plugins in herdr 0.7.1 -- it only moves focus. tab.focused fires on that
+# post-close focus move (and every tab switch), and the reconcile is idempotent,
+# so hooking it makes a keyboard close renumber/rename promptly.
+[[events]]
+on = "tab.focused"
+command = ["bash", "automatic-rename.sh", "tab.focused"]
+
+[[events]]
+on = "pane.focused"
+command = ["bash", "automatic-rename.sh", "pane.focused"]
+
+# --- Agents (cmd+alt+N): no agent.created event exists, so infer membership /
+#     order changes from pane lifecycle. agent rename emits no event. ---
+[[events]]
+on = "pane.agent_detected"
+command = ["bash", "automatic-rename.sh", "pane.agent_detected"]
+
+# An agent's status change reorders the "priority"-sorted agent panel. There is
+# no event for the sort toggle itself, so this frequent status event is what
+# makes an active session's numbering self-heal promptly after a resort (strip
+# in priority mode, renumber back in grouped mode); it is idempotent otherwise.
+[[events]]
+on = "pane.agent_status_changed"
+command = ["bash", "automatic-rename.sh", "pane.agent_status_changed"]
+
+[[events]]
+on = "pane.closed"
+command = ["bash", "automatic-rename.sh", "pane.closed"]
+
+[[events]]
+on = "pane.exited"
+command = ["bash", "automatic-rename.sh", "pane.exited"]
+
+[[events]]
+on = "pane.moved"
+command = ["bash", "automatic-rename.sh", "pane.moved"]
+
+# Opt a manually-renamed tab back into automatic naming (NAME_TABS). Invoke with
+#   herdr plugin action invoke herdr-automatic-rename.reset
+# or bind a key in config.toml (type = "plugin_action").
+[[actions]]
+id = "reset"
+title = "Reset tab to automatic naming"
+contexts = ["global"]
+command = ["bash", "automatic-rename.sh", "reset"]
+
+# Strip every "[N] " prefix (restore base names / revert agents to detection).
+# For a clean uninstall, run the strip directly BEFORE uninstalling, so the
+# renames do not re-fire the numbering hooks (see the README's Uninstall steps).
+[[actions]]
+id = "clear"
+title = "Herdr Automatic Rename: strip all number prefixes"
+contexts = ["global"]
+command = ["bash", "automatic-rename.sh", "--clear"]
