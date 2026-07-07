@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Fake `herdr` CLI for the reconcile integration test.
+#
+# Read-only queries are served from fixture files in $HERDR_MOCK_DIR:
+#   workspaces.json          <- workspace list
+#   tabs_<workspace_id>.json  <- tab list --workspace <id>
+#   tab_<tab_id>.json         <- tab get <id>
+#   panes.json                <- pane list
+#   procinfo_<pane_id>.json   <- pane process-info --pane <id>
+#   agents.json               <- agent list
+#
+# Mutating commands (the whole point of the test) are appended verbatim to
+# $HERDR_MOCK_LOG so the test can assert exactly which renames the engine issued.
+# A missing query fixture yields a valid-but-empty result so the engine degrades
+# the same way it would against a real herdr that returned nothing.
+
+dir="${HERDR_MOCK_DIR:?HERDR_MOCK_DIR unset}"
+log="${HERDR_MOCK_LOG:?HERDR_MOCK_LOG unset}"
+
+serve() { cat "$dir/$1" 2>/dev/null || printf '%s' "$2"; }
+
+group="$1"; shift 2>/dev/null || true
+action="$1"; shift 2>/dev/null || true
+
+case "$group" in
+  workspace)
+    case "$action" in
+      list)   serve workspaces.json '{"result":{"workspaces":[]}}' ;;
+      rename) printf 'workspace rename %s %s\n' "$1" "$2" >>"$log" ;;
+    esac ;;
+  tab)
+    case "$action" in
+      list)
+        w=""
+        while [ $# -gt 0 ]; do case "$1" in --workspace) w="$2"; shift 2 ;; *) shift ;; esac; done
+        serve "tabs_$w.json" '{"result":{"tabs":[]}}' ;;
+      get)    serve "tab_$1.json" '{}' ;;
+      rename) printf 'tab rename %s %s\n' "$1" "$2" >>"$log" ;;
+    esac ;;
+  pane)
+    case "$action" in
+      list) serve panes.json '{"result":{"panes":[]}}' ;;
+      process-info)
+        p=""
+        while [ $# -gt 0 ]; do case "$1" in --pane) p="$2"; shift 2 ;; *) shift ;; esac; done
+        serve "procinfo_$p.json" '{}' ;;
+    esac ;;
+  agent)
+    case "$action" in
+      list)   serve agents.json '{"result":{"agents":[]}}' ;;
+      rename) printf 'agent rename %s %s\n' "$1" "$2" >>"$log" ;;
+    esac ;;
+esac
+exit 0
