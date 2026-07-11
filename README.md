@@ -2,6 +2,8 @@
 
 [![tests](https://github.com/qu8n/herdr-automatic-rename/actions/workflows/ci.yml/badge.svg)](https://github.com/qu8n/herdr-automatic-rename/actions/workflows/ci.yml)
 
+https://github.com/user-attachments/assets/5cd332d8-8817-47ca-9ae8-58b6e461c056
+
 ## Features
 
 No more wondering (1) what's running in each tab and (2) what keybind number needed to jump to a workspace, tab, or agent. This [herdr](https://herdr.dev) plugin does two things:
@@ -13,7 +15,7 @@ No more wondering (1) what's running in each tab and (2) what keybind number nee
 ```
 Tab names:
 Before     │  1  │  2  │  3  │
-After      │ [1] api │ [2] nvim │ [3] claude │
+After      │ [1] codex │ [2] nvim │ [3] claude │
 ```
 
 Each feature can be toggled and work independently.
