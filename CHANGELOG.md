@@ -17,7 +17,7 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
   a short settle. A function that wraps a long-running program now names the
   tab after that program instead of the function.
 
-## [0.1.0]
+## [0.1.0] - 2026-07-11
 
 First public release.
 
@@ -34,3 +34,7 @@ First public release.
   `$HERDR_AUTOMATIC_RENAME_CONFIG`), with a documented `config.example.sh`.
 - A self-contained test suite (bash + jq only) covering naming, prefix helpers,
   the state machine, the shell hooks, and a full reconcile against a fake herdr.
+
+[Unreleased]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/qu8n/herdr-automatic-rename/releases/tag/v0.1.0
