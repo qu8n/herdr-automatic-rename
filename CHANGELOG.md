@@ -6,6 +6,8 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-12
+
 ### Fixed
 
 - Calling a shell function (or builtin, reserved word, or mistyped command) no
