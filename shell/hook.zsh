@@ -32,10 +32,25 @@ if [[ -n ${HERDR_PANE_ID:-} && -x $_har_bin ]]; then
   # the tab by its real program, matching a typed `cd ..`, instead of showing
   # the literal `..`. Fall back to $1 when history is off and $2 is empty.
   #
+  # The first word is only a program name when it resolves to an external
+  # command. zsh expands aliases in $2 but never functions, so a function `l`
+  # arrives verbatim; builtins, reserved words, and typos are in the same boat.
+  # Naming the tab after such a word flashes a bogus name on every instant
+  # construct (preexec renames, precmd snaps it back). whence -w classifies the
+  # word: command/hashed keep the instant path, anything else gets a "shell"
+  # marker telling the engine to sample the pane's real foreground process.
+  #
   # precmd passes the shell name ("zsh") so a bare prompt names the tab "zsh"
   # regardless of the login shell.
-  _har_preexec() { ("$_har_bin" preexec "${2:-$1}" >/dev/null 2>&1 &); }
-  _har_precmd()  { ("$_har_bin" precmd zsh         >/dev/null 2>&1 &); }
+  _har_preexec() {
+    local line="${2:-$1}" kind
+    kind=$(builtin whence -w -- "${(Q)${(z)line}[1]}" 2>/dev/null)
+    case "${kind##*: }" in
+      command|hashed) ("$_har_bin" preexec "$line"       >/dev/null 2>&1 &) ;;
+      *)              ("$_har_bin" preexec "$line" shell >/dev/null 2>&1 &) ;;
+    esac
+  }
+  _har_precmd() { ("$_har_bin" precmd zsh >/dev/null 2>&1 &); }
 
   autoload -Uz add-zsh-hook
   add-zsh-hook preexec _har_preexec   # add-zsh-hook is idempotent on re-source

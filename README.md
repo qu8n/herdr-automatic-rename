@@ -54,6 +54,8 @@ end
 
 No-op outside a herdr pane. On bash it cooperates with bash-preexec / atuin / ble.sh, else owns `DEBUG` without clobbering an existing trap.
 
+A command word that is not an external program (a shell function, builtin, or typo) never renames the tab directly. The hook flags it, and the engine reads the pane's real foreground process a moment later: an instant function leaves the tab name alone, and a function that opens `nvim` names the tab `nvim`.
+
 ## Configuration
 
 Works with no config. To change a knob, copy the sample:

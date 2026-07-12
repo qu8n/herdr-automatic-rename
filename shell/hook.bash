@@ -36,8 +36,23 @@ if [[ -n ${HERDR_PANE_ID:-} && -x $_har_bin && -z ${_har_installed:-} ]]; then
   # Background in a subshell so bash never prints a "[1] <pid>" job-start line.
   # preexec's $1 is the command line; precmd passes the shell name ("bash") so a
   # bare prompt names the tab "bash" regardless of the login shell.
-  _har_preexec() { ("$_har_bin" preexec "$1"   >/dev/null 2>&1 &); }
-  _har_precmd()  { ("$_har_bin" precmd  bash    >/dev/null 2>&1 &); }
+  #
+  # The first word only names a program when `type -t` says it is a file on
+  # disk. bash hands us the RAW line, so aliases, functions, builtins, keywords,
+  # and typos all arrive unresolved; naming the tab after such a word flashes a
+  # bogus name on every instant construct (preexec renames, precmd snaps it
+  # back). Anything that is not a file gets a "shell" marker telling the engine
+  # to sample the pane's real foreground process instead.
+  _har_preexec() {
+    local word="${1%% *}" kind
+    kind=$(type -t -- "$word" 2>/dev/null)
+    if [ "$kind" = "file" ]; then
+      ("$_har_bin" preexec "$1"       >/dev/null 2>&1 &)
+    else
+      ("$_har_bin" preexec "$1" shell >/dev/null 2>&1 &)
+    fi
+  }
+  _har_precmd() { ("$_har_bin" precmd bash >/dev/null 2>&1 &); }
 
   if declare -p preexec_functions >/dev/null 2>&1 || declare -p precmd_functions >/dev/null 2>&1; then
     # A preexec framework (bash-preexec / ble.sh / atuin) owns the trap; just

@@ -56,6 +56,25 @@ fish via `status current-filename` captured into a global. The bash hook never
 overwrites a `DEBUG` trap another tool already set, and cooperates with
 `bash-preexec` / `ble.sh` / `atuin` when present.
 
+## Shell constructs are sampled, not trusted
+
+The preexec fast path names the tab by the first word of the command line,
+which is only honest when that word resolves to an external program. zsh
+expands aliases in preexec's `$2` but never expands functions, and bash and
+fish hand over the raw line, so a function `l`, a builtin, a reserved word, or
+a typo arrives verbatim. No program list can match those words (`IGNORED_PROGRAMS`
+holds `eza`, not the function `l` that calls it), so trusting them renamed the
+tab and let precmd snap it back: a flicker on every instant construct.
+
+Each hook classifies the command word (`whence -w` in zsh, `type -t` in bash,
+`type --type` in fish). External commands keep the instant rename. Everything
+else gets a `shell` marker, and the engine sleeps 0.2 s (before taking the
+lock), then names the tab by the pane's actual foreground process via
+`pane process-info`. An instant construct has exited by then, so the leader is
+the shell again and nothing is renamed. A construct that wraps a long-running
+program gets that program's real name, which the typed word never was. When
+sampling fails the engine renames nothing rather than guess.
+
 ## Numbering caveats
 
 - **Tabs** are numbered by array order, not the non-contiguous `.number` field.

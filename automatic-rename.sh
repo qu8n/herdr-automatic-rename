@@ -558,16 +558,31 @@ ar_reconcile() {
   fi
 }
 
-# Fast path for the zsh hooks: rename only the current tab (no cross-tab work).
+# Fast path for the shell hooks: rename only the current tab (no cross-tab work).
 # preexec passes the command line; precmd (back at the prompt) names by the shell.
 # Preserves the existing "[N]" prefix when AUTO_INDEX is on, drops it when off.
+#
+# preexec has two modes. Default: trust the command line's first word as the
+# program (accurate for external commands and expanded aliases). Sampled
+# (AR_FAST_SAMPLE=1, the hook classified the word as a shell construct --
+# function/builtin/reserved/typo): the word is NOT the program, so read the
+# pane's real foreground process instead. An instant construct has exited by
+# sample time (leader = the shell -> name already "zsh" -> no rename, no
+# flicker); a construct wrapping nvim samples as nvim. On sampling failure
+# rename nothing -- never guess.
 ar_fast_once() {
   local tab="${HERDR_TAB_ID:-}"
   [ -n "$tab" ] || return 0
-  local prog="" cmd="" name label raw prefix slabel enabled auto want
+  local prog="" cmd="" info name label raw prefix slabel enabled auto want
   if [ "$MODE" = "preexec" ]; then
-    cmd="${AR_FAST_ARG:-}"
-    prog="${cmd%% *}"; prog="${prog##*/}"
+    if [ "${AR_FAST_SAMPLE:-}" = "1" ]; then
+      info=$(ar_pane_program "${HERDR_PANE_ID:-}") || return 0
+      IFS=$'\t' read -r prog cmd <<< "$info"
+      [ -n "$prog" ] || return 0
+    else
+      cmd="${AR_FAST_ARG:-}"
+      prog="${cmd%% *}"; prog="${prog##*/}"
+    fi
   fi
   name=$(ar_format "$prog" "$cmd")
   # A failed `tab get` must NOT look like an empty label (which would read as a
@@ -641,6 +656,15 @@ ar_main() {
     preexec)
       [ "$NAME_TABS" = "1" ] || exit 0
       AR_FAST_ARG="${2:-}"                    # the command line being run
+      # $3 = "shell": the hook resolved the command word to a shell construct
+      # (function/builtin/reserved/typo), which never becomes the foreground
+      # process. Give the construct a moment to finish or spawn its real
+      # program, then name by what actually holds the pane (see ar_fast_once).
+      # The settle sleep runs BEFORE ar_run so the lock is never held asleep.
+      if [ "${3:-}" = "shell" ]; then
+        AR_FAST_SAMPLE=1
+        sleep 0.2 2>/dev/null || true
+      fi
       ar_run fast
       ;;
     precmd)

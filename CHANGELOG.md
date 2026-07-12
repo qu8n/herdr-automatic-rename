@@ -6,6 +6,15 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
 
 ## [Unreleased]
 
+### Fixed
+
+- Calling a shell function (or builtin, reserved word, or mistyped command) no
+  longer flashes that word onto the tab before the prompt reverts it. The hooks
+  now classify the command word; anything that is not an external command makes
+  the engine name the tab by the pane's real foreground process, sampled after
+  a short settle. A function that wraps a long-running program now names the
+  tab after that program instead of the function.
+
 ## [0.1.0]
 
 First public release.

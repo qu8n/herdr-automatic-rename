@@ -17,18 +17,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install jq (Linux)
+      # zsh and fish make the hook classification tests run instead of skipping
+      # (macOS already ships zsh).
+      - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: sudo apt-get update && sudo apt-get install -y jq zsh fish
 
-      - name: Install jq (macOS)
+      - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install jq
+        run: brew install jq fish
 
       - name: Versions
         run: |
           bash --version | head -1
           /bin/bash --version | head -1
+          zsh --version
+          fish --version
           jq --version
 
       - name: Syntax check
@@ -36,6 +40,8 @@ jobs:
           for f in automatic-rename.sh naming.sh shell/hook.bash; do
             /bin/bash -n "$f"
           done
+          zsh -n shell/hook.zsh
+          fish -n shell/hook.fish
 
       - name: Run tests
         run: ./tests/run.sh
