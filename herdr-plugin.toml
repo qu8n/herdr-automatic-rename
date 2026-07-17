@@ -104,6 +104,16 @@ command = ["bash", "automatic-rename.sh", "pane.exited"]
 on = "pane.moved"
 command = ["bash", "automatic-rename.sh", "pane.moved"]
 
+# A split adds a pane, flipping the tab's pane_count and thus which pane naming
+# resolves (a single-pane tab names by its sole pane; a background multi-pane tab
+# exposes none). pane.created fires even when the split does NOT move focus, so
+# no pane.focused arrives; the reconcile is idempotent. (pane.closed/pane.exited
+# already cover the reverse.) Note: herdr's layout.updated is a socket-only event,
+# not delivered to plugins, so pane.created is the hook for this.
+[[events]]
+on = "pane.created"
+command = ["bash", "automatic-rename.sh", "pane.created"]
+
 # Opt a manually-renamed tab back into automatic naming (NAME_TABS). Invoke with
 #   herdr plugin action invoke herdr-automatic-rename.reset
 # or bind a key in config.toml (type = "plugin_action").
