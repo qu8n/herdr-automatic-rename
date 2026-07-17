@@ -16,6 +16,8 @@ Each feature can be toggled and work independently.
 
 herdr `>= 0.7.1`, `jq`, and bash. Linux or macOS.
 
+herdr `>= 0.7.4` is recommended. There a plugin rename repaints the tab bar immediately, so live renames appear the instant they happen; on older herdr the new name still lands but the tab bar only catches up on the next redraw (a focus change or resize). herdr `>= 0.7.2` also lets a full reconcile read its whole state in one `api snapshot` call — without it the plugin falls back to per-list queries automatically.
+
 ## Install
 
 ```sh
