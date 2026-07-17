@@ -1,6 +1,6 @@
 id = "herdr-automatic-rename"
 name = "Herdr Automatic Rename"
-version = "0.1.1"
+version = "0.2.0"
 min_herdr_version = "0.7.1"
 description = "Auto-name tabs after the foreground program and/or prefix workspaces, tabs, and agents with their 1-9 jump-key number. Each feature toggles via config.sh."
 platforms = ["linux", "macos"]

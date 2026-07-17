@@ -6,6 +6,20 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-17
+
+### Added
+
+- Subscribe to herdr's `pane.created` event so a split that adds a pane renames
+  the tab promptly, even when the split does not move focus.
+
+### Changed
+
+- A full reconcile now reads its whole picture (workspaces, tabs, panes, agents)
+  from a single `herdr api snapshot` call instead of one query per list plus a
+  `tab list` per workspace. Needs herdr `>= 0.7.2`; older herdr falls back to the
+  per-list queries automatically, so the minimum supported version stays `0.7.1`.
+
 ## [0.1.1] - 2026-07-12
 
 ### Fixed
@@ -35,6 +49,7 @@ First public release.
 - A self-contained test suite (bash + jq only) covering naming, prefix helpers,
   the state machine, the shell hooks, and a full reconcile against a fake herdr.
 
-[Unreleased]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/qu8n/herdr-automatic-rename/releases/tag/v0.1.0
