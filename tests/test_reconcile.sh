@@ -168,4 +168,56 @@ check_absent "no clobber to shell name on blip" "$out" "zsh"
 check_absent "owned tab left untouched on blip" "$out" "tab rename w1:t1"
 teardown
 
+# ======================================================================
+# Scenario 5: the api-snapshot path. Same inputs and expected renames as
+#   Scenario 1, but the engine's whole picture comes from ONE snapshot.json
+#   (no workspaces.json / tabs_*.json / panes.json / agents.json). If the
+#   snapshot path were skipped, the fallback would hit the mock's empty list
+#   defaults and rename NOTHING -- so these renames appearing proves the
+#   snapshot slices are parsed, ordered, and grouped-by-workspace correctly.
+#   procinfo fixtures are still required: naming samples the foreground process
+#   per tab, which the snapshot does not carry.
+# ======================================================================
+setup
+export NAME_TABS=1 AUTO_INDEX=1
+fixture snapshot.json <<'JSON'
+{"result":{"snapshot":{
+  "workspaces":[
+    {"workspace_id":"w1","label":"api"},
+    {"workspace_id":"w2","label":"web"}
+  ],
+  "tabs":[
+    {"tab_id":"w1:t1","label":"1","pane_count":1,"focused":true,"workspace_id":"w1"},
+    {"tab_id":"w1:t2","label":"2","pane_count":1,"focused":false,"workspace_id":"w1"},
+    {"tab_id":"w2:t1","label":"3","pane_count":2,"focused":false,"workspace_id":"w2"}
+  ],
+  "panes":[
+    {"pane_id":"p1","tab_id":"w1:t1","focused":true},
+    {"pane_id":"p2","tab_id":"w1:t2","focused":false},
+    {"pane_id":"p3","tab_id":"w2:t1","focused":false},
+    {"pane_id":"p4","tab_id":"w2:t1","focused":false}
+  ],
+  "agents":[
+    {"terminal_id":"term_a","name":"claude","agent_session":{"agent":"claude"}}
+  ]
+}}}
+JSON
+fixture procinfo_p1.json <<'JSON'
+{"result":{"process_info":{"foreground_process_group_id":100,
+  "foreground_processes":[{"pid":100,"argv0":"-zsh","cmdline":"-zsh"}]}}}
+JSON
+fixture procinfo_p2.json <<'JSON'
+{"result":{"process_info":{"foreground_process_group_id":200,
+  "foreground_processes":[{"pid":200,"argv0":"nvim","cmdline":"nvim README.md"}]}}}
+JSON
+run_event tab.focused
+out=$(log)
+check_contains "snapshot: ws1 numbered"        "$out" "workspace rename w1 [1] api"
+check_contains "snapshot: ws2 numbered"        "$out" "workspace rename w2 [2] web"
+check_contains "snapshot: tab1 named+numbered" "$out" "tab rename w1:t1 [1] zsh"
+check_contains "snapshot: tab2 named+numbered" "$out" "tab rename w1:t2 [2] nvim"
+check_absent   "snapshot: placeholder deferred" "$out" "tab rename w2:t1"
+check_contains "snapshot: agent numbered"      "$out" "agent rename term_a [1] claude"
+teardown
+
 t_summary

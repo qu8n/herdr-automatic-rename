@@ -339,7 +339,15 @@ ar_reconcile_tabs() {
   [ -n "$wsjson" ] || return 0
   while IFS= read -r w; do
     [ -n "$w" ] || continue
-    tjson=$("$HERDR" tab list --workspace "$w" 2>/dev/null) || continue
+    if [ "${AR_HAVE_SNAPSHOT:-0}" = "1" ]; then
+      # Slice this workspace's tabs out of the cached snapshot, preserving array
+      # order (what cmd+N numbers by). Same shape as `tab list --workspace`.
+      tjson=$(printf '%s' "$AR_SNAP_TABS_JSON" | jq -c --arg w "$w" \
+        '{result:{tabs:[(.result.tabs // [])[]|select(.workspace_id==$w)]}}' 2>/dev/null)
+    else
+      tjson=$("$HERDR" tab list --workspace "$w" 2>/dev/null) || continue
+    fi
+    [ -n "$tjson" ] || continue
     rows=$(printf '%s' "$tjson" | jq -r '
       (.result.tabs // .tabs // [])[]
       | [ .tab_id, (.label // ""), (.pane_count // 0), (.focused // false) ] | @tsv' 2>/dev/null)
@@ -455,7 +463,12 @@ ar_agent_sort() {
 # ar_agent_sort), so there we strip our numbering exactly like --clear does.
 ar_renumber_agents() {
   local json rows tid label detected base want i=0 n j strip=0
-  json=$("$HERDR" agent list 2>/dev/null) || return 0
+  if [ "${AR_HAVE_SNAPSHOT:-0}" = "1" ]; then
+    json="$AR_SNAP_AGENTS_JSON"
+  else
+    json=$("$HERDR" agent list 2>/dev/null) || return 0
+  fi
+  [ -n "$json" ] || return 0
   rows=$(printf '%s' "$json" | jq -r '
     (.result.agents // .agents // [])[]
     | [ (.terminal_id // .pane_id // ""), (.name // .agent // ""), (.agent_session.agent // .agent // "") ] | @tsv' 2>/dev/null)
@@ -535,15 +548,47 @@ ar_wait_tab_gone() {
 # Full reconcile of every list, gated by the toggles. --clear ignores the toggles
 # and strips everything (the uninstall path).
 ar_reconcile() {
-  local wsjson
+  local wsjson snap
   # A reset deletes the target tab's state once (under the lock) so it re-adopts.
   if [ -n "${AR_FORCE_TAB:-}" ] && [ -z "${AR_FORCE_DONE:-}" ]; then
     ar_state_del "$AR_FORCE_TAB"
     AR_FORCE_DONE=1
   fi
-  wsjson=$("$HERDR" workspace list 2>/dev/null) || wsjson=""
-  if [ "$CLEAR" != "1" ] && [ "$NAME_TABS" = "1" ]; then
-    AR_PANES_JSON=$("$HERDR" pane list 2>/dev/null) || AR_PANES_JSON='{"result":{"panes":[]}}'
+  # One `herdr api snapshot` (herdr >= 0.7.2) carries the workspace, tab, pane,
+  # and agent lists in a single socket round-trip, in the SAME order and with the
+  # same fields as the individual `... list` commands -- and numbering reads array
+  # order, so that equal ordering is load-bearing (verified against a live herdr).
+  # It replaces the old per-reconcile fan-out of `workspace list` + `pane list` +
+  # `agent list` + one `tab list` per workspace. We reshape each slice into the
+  # `{result:{...}}` envelope the existing jq already expects and cache the tab /
+  # agent slices for ar_reconcile_tabs / ar_renumber_agents. Any failure (older
+  # herdr with no `api snapshot`, a socket hiccup) falls back to the separate list
+  # calls, so this never raises the plugin's min herdr version. Per-tab foreground
+  # detection (`pane process-info`) is unaffected -- the snapshot carries panes but
+  # not each pane's foreground process, so naming still samples per named tab.
+  AR_HAVE_SNAPSHOT=0
+  AR_SNAP_TABS_JSON=""
+  AR_SNAP_AGENTS_JSON=""
+  snap=$("$HERDR" api snapshot 2>/dev/null) || snap=""
+  if [ -n "$snap" ] && printf '%s' "$snap" \
+       | jq -e '(.result.snapshot // .snapshot).workspaces' >/dev/null 2>&1; then
+    AR_HAVE_SNAPSHOT=1
+    wsjson=$(printf '%s' "$snap" | jq -c \
+      '{result:{workspaces:((.result.snapshot // .snapshot).workspaces // [])}}' 2>/dev/null)
+    AR_SNAP_TABS_JSON=$(printf '%s' "$snap" | jq -c \
+      '{result:{tabs:((.result.snapshot // .snapshot).tabs // [])}}' 2>/dev/null)
+    AR_SNAP_AGENTS_JSON=$(printf '%s' "$snap" | jq -c \
+      '{result:{agents:((.result.snapshot // .snapshot).agents // [])}}' 2>/dev/null)
+    if [ "$CLEAR" != "1" ] && [ "$NAME_TABS" = "1" ]; then
+      AR_PANES_JSON=$(printf '%s' "$snap" | jq -c \
+        '{result:{panes:((.result.snapshot // .snapshot).panes // [])}}' 2>/dev/null)
+      [ -n "$AR_PANES_JSON" ] || AR_PANES_JSON='{"result":{"panes":[]}}'
+    fi
+  else
+    wsjson=$("$HERDR" workspace list 2>/dev/null) || wsjson=""
+    if [ "$CLEAR" != "1" ] && [ "$NAME_TABS" = "1" ]; then
+      AR_PANES_JSON=$("$HERDR" pane list 2>/dev/null) || AR_PANES_JSON='{"result":{"panes":[]}}'
+    fi
   fi
   if [ "$CLEAR" = "1" ] || [ "$AUTO_INDEX" = "1" ]; then
     ar_renumber_workspaces "$wsjson"

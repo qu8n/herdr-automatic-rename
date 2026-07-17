@@ -7,9 +7,14 @@ This documents the non-obvious decisions in herdr-automatic-rename. For usage, s
 
 `automatic-rename.sh` is invoked for every herdr event, both plugin actions, and the
 shell hooks' fast path. It routes through `ar_run` and dispatches on `argv[1]`.
-A full reconcile reads `workspace list`, `pane list`, and `agent list` once
-each, plus `tab list` per workspace, then computes the label every item should
-have and issues one rename per item whose label is wrong.
+A full reconcile pulls its whole picture — workspaces, tabs, panes, and agents —
+from one `herdr api snapshot` (a single socket call, herdr >= 0.7.2), then
+computes the label every item should have and issues one rename per item whose
+label is wrong. Older herdr with no `api snapshot` falls back to reading
+`workspace list`, `pane list`, and `agent list` once each plus `tab list` per
+workspace. Either way, per-tab foreground detection stays one `pane process-info`
+per named tab — the snapshot carries the pane list but not each pane's foreground
+process.
 
 Computing a tab's name and its `[N]` prefix in the same pass is what lets a
 brand-new tab settle at `[3] zsh` in a single rename. Every rename is

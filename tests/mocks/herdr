@@ -8,6 +8,11 @@
 #   panes.json                <- pane list
 #   procinfo_<pane_id>.json   <- pane process-info --pane <id>
 #   agents.json               <- agent list
+#   snapshot.json             <- api snapshot (workspaces/tabs/panes/agents in one)
+#
+# A scenario that ships snapshot.json exercises the single-call snapshot path;
+# one that omits it gets the empty default here, so the engine falls back to the
+# individual list commands above -- both paths stay covered.
 #
 # Mutating commands (the whole point of the test) are appended verbatim to
 # $HERDR_MOCK_LOG so the test can assert exactly which renames the engine issued.
@@ -49,6 +54,13 @@ case "$group" in
     case "$action" in
       list)   serve agents.json '{"result":{"agents":[]}}' ;;
       rename) printf 'agent rename %s %s\n' "$1" "$2" >>"$log" ;;
+    esac ;;
+  api)
+    case "$action" in
+      # Empty default -> the engine's snapshot guard fails -> it falls back to the
+      # individual list commands. A scenario opts into the snapshot path by
+      # shipping snapshot.json.
+      snapshot) serve snapshot.json '' ;;
     esac ;;
 esac
 exit 0
