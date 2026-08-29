@@ -67,6 +67,10 @@ LOCK_DIR="$STATE_DIR/lock"
 RERUN_FLAG="$STATE_DIR/rerun"
 CONFIG_FILE="${HERDR_AUTOMATIC_RENAME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr-automatic-rename/config.sh}"
 
+# Ordered `sed -E` rewrites for directory-derived workspace labels. Config loads
+# later and may replace this empty default.
+declare -p WORKSPACE_SUBSTITUTE_SETS >/dev/null 2>&1 || WORKSPACE_SUBSTITUTE_SETS=()
+
 # `task` is the shape a TITLE arrives in: control characters gone, the leading run
 # of non-alphanumerics gone (an agent parks a spinner glyph there), the agent's own
 # brand gone with it, no trailing space, and inner runs of it collapsed. One
@@ -493,15 +497,16 @@ ar_state_get() { # <tab_id> <field>
   jq -r --arg t "$1" --arg f "$2" '.[$t][$f] as $v | if $v == null then empty else $v end' \
     "$STATE_FILE" 2>/dev/null
 }
-ar_state_set() { # <tab_id> <auto-name> <enabled true|false>
-  local base tmp
+ar_state_set() { # <tab_id> <auto-name> <enabled true|false> [source-name]
+  local base tmp source=${4:-} filter=".[\$t] = {auto: \$a, enabled: \$e}"
   base=$(ar_state_read) || return 1        # unreadable: leave the file alone
   # A write that did not land reports it. Ownership IS this file, so swallowing a
   # full disk or an unwritable state directory told the reset action a tab was
   # re-adopted while the next pass, finding no entry, opted it straight back out.
   tmp=$(mktemp "$STATE_DIR/.state.XXXXXX") || return 1
-  if printf '%s' "$base" | jq --arg t "$1" --arg a "$2" --argjson e "$3" \
-       '.[$t] = {auto: $a, enabled: $e}' > "$tmp" 2>/dev/null; then
+  [ "$#" -lt 4 ] || filter=".[\$t] = {auto: \$a, enabled: \$e, source: \$s}"
+  if printf '%s' "$base" | jq --arg t "$1" --arg a "$2" --argjson e "$3" --arg s "$source" \
+       "$filter" > "$tmp" 2>/dev/null; then
     mv "$tmp" "$STATE_FILE" || return 1
   else
     rm -f "$tmp"
@@ -939,6 +944,16 @@ ar_project_base() {
   printf '%s' "${dir##*/}"
 }
 
+# ar_workspace_subst <base> -> a directory-derived workspace label with each
+# configured rewrite applied in order.
+ar_workspace_subst() {
+  local s=$1 expr
+  for expr in "${WORKSPACE_SUBSTITUTE_SETS[@]}"; do
+    s=$(printf '%s' "$s" | sed -E "$expr")
+  done
+  printf '%s' "$s"
+}
+
 # ar_workspace_pane_dirs <workspace-list-json> -> one "<workspace_id><SEP><dir>"
 # row per workspace, from the panes the pass already holds: its focused pane, or
 # a pane of the tab it has active, or any pane of it.
@@ -1007,11 +1022,13 @@ ar_identity_base() { # <workspace_id>
 # moved on and ours has not, and only the record tells that apart from a name
 # somebody typed. Anything else is somebody's name and is left alone for good.
 ar_ws_track_eligible() {
-  local key="ws:$1" slabel=$2 ibase=$3 enabled auto
+  local key="ws:$1" slabel=$2 ibase=$3 enabled auto source
   enabled=$(ar_state_get "$key" enabled)
   auto=$(ar_state_get "$key" auto)
+  source=$(ar_state_get "$key" source)
   AR_WS_STATE_ENABLED=$enabled
   AR_WS_STATE_AUTO=$auto
+  AR_WS_STATE_SOURCE=$source
   if [ "$slabel" = "$ibase" ]; then
     return 0
   elif [ "$enabled" = "true" ] && [ "$slabel" = "$auto" ]; then
@@ -1021,17 +1038,32 @@ ar_ws_track_eligible() {
   return 1
 }
 
-# ar_ws_claim <workspace_id> <base> - record that we own this workspace's base,
+# ar_ws_claim <workspace_id> <base> <source> - record that we own this workspace's base,
 # unless state already says exactly that (the steady state, every pass, for every
 # tracked workspace: ar_state_set rewrites the whole file). Reads what
 # ar_ws_track_eligible published for this same workspace. Only ever called for a
 # base the workspace CARRIES -- a base recorded for a rename that never landed
 # reads as a hand-typed name one pass later, and opts the workspace out.
 ar_ws_claim() {
-  if [ "${AR_WS_STATE_ENABLED:-}" = "true" ] && [ "${AR_WS_STATE_AUTO:-}" = "$2" ]; then
+  if [ "${AR_WS_STATE_ENABLED:-}" = "true" ] && [ "${AR_WS_STATE_AUTO:-}" = "$2" ] &&
+     [ "${AR_WS_STATE_SOURCE:-}" = "$3" ]; then
     return 0
   fi
-  ar_state_set "ws:$1" "$2" true
+  ar_state_set "ws:$1" "$2" true "$3"
+}
+
+# ar_ws_subst_pending -> 0 when a prior substitution still differs from its
+# directory-derived source and needs one pass after the rules are removed.
+ar_ws_subst_pending() {
+  local base
+  base=$(ar_state_read) || return 1
+  printf '%s' "$base" | jq -e '
+    any(to_entries[]?;
+      (.key | startswith("ws:"))
+      and .value.enabled == true
+      and (.value.source | type) == "string"
+      and .value.auto != .value.source)
+  ' >/dev/null 2>&1
 }
 
 # ar_state_prune_ws <keep workspace_ids...> - drop the "ws:" records of
@@ -1062,10 +1094,14 @@ ar_state_prune_ws() {
 # and --clear skips it entirely: the uninstall path strips prefixes and retitles
 # nothing.
 ar_renumber_workspaces() {
-  local json=$1 rows wid label pos base want ibase track seen=""
+  local json=$1 rows wid label pos base want ibase track prefix index_pass=0 seen=""
   [ -n "$json" ] || return 0
+  ar_index_pass workspaces && index_pass=1
   rows=$(ar_workspace_positions "$json" "$(ar_collapsed_spaces)")
-  [ -n "$rows" ] || return 0
+  if [ -z "$rows" ]; then
+    [ "$CLEAR" = "1" ] || ar_state_prune_ws
+    return 0
+  fi
   AR_WS_IDENTITY=""
   AR_WS_PANEDIR=""
   if [ "$CLEAR" != "1" ]; then
@@ -1078,15 +1114,26 @@ ar_renumber_workspaces() {
     base=$(ar_strip_prefix "$label")
     track=0
     if ibase=$(ar_identity_base "$wid") && ar_ws_track_eligible "$wid" "$base" "$ibase"; then
-      base=$ibase
+      base=$(ar_workspace_subst "$ibase")
       track=1
     fi
     [ -n "$base" ] || continue          # empty label: nothing to number, leave it
-    want=$(ar_desired workspaces "$pos" "$base")  # position 0 (hidden) -> bare, like 10+
+    if [ "$index_pass" = "1" ]; then
+      want=$(ar_desired workspaces "$pos" "$base")  # position 0 (hidden) -> bare, like 10+
+    elif [ "$track" = "1" ]; then
+      prefix=$(ar_index_prefix "$label")
+      want="${prefix}${base}"
+    else
+      want=$label
+    fi
     if [ "$want" != "$label" ]; then
       "$HERDR" workspace rename "$wid" "$want" >/dev/null 2>&1 || continue
     fi
-    [ "$track" = "1" ] && ar_ws_claim "$wid" "$base"
+    if [ "$track" = "1" ] &&
+       { [ "$index_pass" = "1" ] || [ "$base" != "$ibase" ] ||
+         [ "${AR_WS_STATE_ENABLED:-}" = "true" ]; }; then
+      ar_ws_claim "$wid" "$base" "$ibase"
+    fi
   done <<< "$rows"
   # A workspace id carries no whitespace (both go through `clean`), so the
   # space-joined list splits into one argument per workspace.
@@ -1426,7 +1473,11 @@ ar_notify() {
 # whether to number or to strip; --clear ignores the toggles and strips
 # everything (the uninstall path).
 ar_reconcile() {
-  local wsjson snap
+  local wsjson snap workspace_pass=0
+  if ar_index_pass workspaces || [ "${#WORKSPACE_SUBSTITUTE_SETS[@]}" -gt 0 ] ||
+     ar_ws_subst_pending; then
+    workspace_pass=1
+  fi
   # A reset deletes the target tab's state once (under the lock) so it re-adopts.
   # Whether there was anything to re-adopt is read BEFORE the delete, because that
   # is what the action reports back and `del` on a key that was never there
@@ -1511,14 +1562,15 @@ ar_reconcile() {
     fi
   else
     wsjson=$("$HERDR" workspace list 2>/dev/null) || wsjson=""
-    if [ "$CLEAR" != "1" ] && [ "$NAME_TABS" = "1" ]; then
+    if [ "$CLEAR" != "1" ] &&
+       { [ "$NAME_TABS" = "1" ] || [ "$workspace_pass" = "1" ]; }; then
       AR_PANES_JSON=$("$HERDR" pane list 2>/dev/null) || AR_PANES_JSON='{"result":{"panes":[]}}'
     fi
   fi
-  # ar_index_pass decides which of these have work to do (numbering, or the
-  # strip a named-and-off kind asks for). Tabs carry an extra arm because they
-  # are the only kind we NAME, so that pass runs whatever the numbering says.
-  if ar_index_pass workspaces; then
+  # ar_index_pass decides which kinds have numbering work to do, or a prefix to
+  # strip. Workspace substitutions and tab naming also run their pass without
+  # numbering.
+  if [ "$workspace_pass" = "1" ]; then
     ar_renumber_workspaces "$wsjson"
   fi
   if ar_index_pass tabs || [ "$NAME_TABS" = "1" ]; then
