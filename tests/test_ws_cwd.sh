@@ -40,6 +40,11 @@ check "outside any repo"        "sub"   "$(ar_project_base "$PB/plain/sub")"
 check "trailing slash ignored"  "sub"   "$(ar_project_base "$PB/plain/sub/")"
 check "relative path: basename" "notes" "$(ar_project_base "some/notes")"
 check "empty path: empty base"  ""      "$(ar_project_base "")"
+
+WORKSPACE_SUBSTITUTE_SETS=('s|^worktree-|wt-|')
+check "workspace display rewrite" "wt-feature" "$(ar_workspace_subst "worktree-feature")"
+check "workspace rewrite nonmatch" "project-a" "$(ar_workspace_subst "project-a")"
+WORKSPACE_SUBSTITUTE_SETS=()
 rm -rf "$PB"
 
 # Numbering only (NAME_TABS off, no tab/pane fixtures), so the rename log holds
@@ -387,6 +392,127 @@ printf '{"ws:w1":{"auto":"stale","enabled":true}}\n' \
 run_event pane.focused
 check_contains "identity_cwd wins" "$(log)" "workspace rename w1 [1] from-identity"
 check_absent   "pane dir ignored"  "$(log)" "from-pane"
+teardown
+
+# ======================================================================
+# Scenario 15: workspace substitutions change only the displayed, derived name
+# and compose with numbering.
+# ======================================================================
+setup
+printf '%s\n' "WORKSPACE_SUBSTITUTE_SETS=('s|^worktree-|wt-|')" \
+  >"$HERDR_AUTOMATIC_RENAME_CONFIG"
+workspaces "$(ws w1 worktree-feature)"
+session "w1=/home/u/worktree-feature"
+run_event workspace.created
+check_contains "numbered workspace display rewritten" "$(log)" "workspace rename w1 [1] wt-feature"
+
+clear_log
+workspaces "$(ws w1 '[1] wt-feature')"
+run_event pane.focused
+check "rewritten workspace settles" "" "$(log)"
+teardown
+
+# ======================================================================
+# Scenario 16: substitutions run without numbering when AUTO_INDEX is off.
+# ======================================================================
+setup
+export AUTO_INDEX=0
+printf '%s\n' "WORKSPACE_SUBSTITUTE_SETS=('s|^worktree-|wt-|')" \
+  >"$HERDR_AUTOMATIC_RENAME_CONFIG"
+workspaces "$(ws w1 worktree-feature)"
+session "w1=/home/u/worktree-feature"
+run_event workspace.created
+check_contains "unnumbered workspace display rewritten" "$(log)" "workspace rename w1 wt-feature"
+teardown
+
+# ======================================================================
+# Scenario 17: the list-command fallback derives a new workspace from its pane
+# before session.json has persisted it.
+# ======================================================================
+setup
+export AUTO_INDEX=0
+printf '%s\n' "WORKSPACE_SUBSTITUTE_SETS=('s|^worktree-|wt-|')" \
+  >"$HERDR_AUTOMATIC_RENAME_CONFIG"
+mkdir -p "$SB/home/worktree-feature"
+workspaces "$(ws w1 worktree-feature)"
+session "w9=/home/other"
+fixture panes.json <<JSON
+{"result":{"panes":[
+  {"pane_id":"w1:p1","workspace_id":"w1","tab_id":"w1:t1","focused":true,
+   "foreground_cwd":"$SB/home/worktree-feature"}
+]}}
+JSON
+run_event workspace.created
+check_contains "fallback workspace display rewritten" "$(log)" "workspace rename w1 wt-feature"
+teardown
+
+# ======================================================================
+# Scenario 18: a matching pattern does not rewrite a name typed by the user.
+# ======================================================================
+setup
+export AUTO_INDEX=0
+printf '%s\n' "WORKSPACE_SUBSTITUTE_SETS=('s|^worktree-|wt-|')" \
+  >"$HERDR_AUTOMATIC_RENAME_CONFIG"
+workspaces "$(ws w1 '[1] worktree-incident')"
+session "w1=/home/u/project-a"
+run_event workspace.created
+check "manual workspace name not rewritten" "" "$(log)"
+teardown
+
+# ======================================================================
+# Scenario 19: removing the substitution restores the derived workspace label
+# even when global numbering is off and would not otherwise run this pass.
+# ======================================================================
+setup
+export AUTO_INDEX=0
+printf '%s\n' "WORKSPACE_SUBSTITUTE_SETS=('s|^worktree-|wt-|')" \
+  >"$HERDR_AUTOMATIC_RENAME_CONFIG"
+workspaces "$(ws w1 worktree-feature)"
+session "w1=/home/u/worktree-feature"
+run_event workspace.created
+
+clear_log
+: >"$HERDR_AUTOMATIC_RENAME_CONFIG"
+workspaces "$(ws w1 wt-feature)"
+run_event pane.focused
+check_contains "removed rewrite restores derived name" "$(log)" \
+  "workspace rename w1 worktree-feature"
+teardown
+
+# ======================================================================
+# Scenario 20: a substitution-only pass does not claim a workspace when no rule
+# changes its name, so removing the rules cannot leave stale ownership records.
+# ======================================================================
+setup
+export AUTO_INDEX=0
+printf '%s\n' "WORKSPACE_SUBSTITUTE_SETS=('s|^worktree-|wt-|')" \
+  >"$HERDR_AUTOMATIC_RENAME_CONFIG"
+workspaces "$(ws w1 project-a)"
+session "w1=/home/u/project-a"
+run_event workspace.created
+check "nonmatching rewrite does not rename" "" "$(log)"
+check "nonmatching rewrite claims no state" "" \
+  "$(jq -r '."ws:w1".auto // ""' "$XDG_STATE_HOME/herdr-automatic-rename/state.json" 2>/dev/null)"
+teardown
+
+# ======================================================================
+# Scenario 21: removing the last rewritten workspace also removes its pending
+# restoration state instead of scheduling an empty workspace pass forever.
+# ======================================================================
+setup
+export AUTO_INDEX=0
+printf '%s\n' "WORKSPACE_SUBSTITUTE_SETS=('s|^worktree-|wt-|')" \
+  >"$HERDR_AUTOMATIC_RENAME_CONFIG"
+workspaces "$(ws w1 worktree-feature)"
+session "w1=/home/u/worktree-feature"
+run_event workspace.created
+
+: >"$HERDR_AUTOMATIC_RENAME_CONFIG"
+workspaces
+session "w9=/home/other"
+run_event workspace.closed
+check "closed rewritten workspace state pruned" "null" \
+  "$(jq -r '."ws:w1" | tostring' "$XDG_STATE_HOME/herdr-automatic-rename/state.json" 2>/dev/null)"
 teardown
 
 t_summary

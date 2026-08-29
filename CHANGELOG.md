@@ -4,6 +4,10 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
 
 ## [Unreleased]
 
+### Added
+
+- Directory-derived workspace labels can now be rewritten with ordered `WORKSPACE_SUBSTITUTE_SETS` rules. The rewrite changes only the name displayed by herdr and leaves the worktree directory unchanged. A hand-entered name that differs from the directory-derived name is not altered; herdr does not expose whether a matching name was entered by hand.
+
 ### Fixed
 
 - A numbered workspace goes on following its directory ([#13](https://github.com/qu8n/herdr-automatic-rename/issues/13)). herdr names a workspace after `identity_cwd`, its own tracked directory, and the first `workspace rename` freezes that name for good: herdr keeps the directory current and never labels from it again. Numbering a workspace pinned it to whatever it was called when it opened, and no smaller rename would have helped, because there is no rename that leaves the derivation alive.

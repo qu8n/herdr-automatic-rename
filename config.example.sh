@@ -38,6 +38,16 @@
 # Anything else in brackets ("[wip] foo") is left alone, digits are the only
 # trigger.
 
+# Ordered `sed -E` rewrites for directory-derived workspace names. These change
+# only the label shown by herdr; they do not rename the directory or Git
+# worktree. A hand-entered name that differs from the derived directory name is
+# left unchanged. Herdr exposes no way to distinguish a hand-entered name that
+# exactly matches the derived name. For example, shorten "worktree-feature" to
+# "wt-feature":
+# WORKSPACE_SUBSTITUTE_SETS=(
+#   's|^worktree-|wt-|'
+# )
+
 # ---- naming knobs (only used when NAME_TABS=1) ----
 
 # 1 = a regular program shows its full command line ("psql -h db"); 0 = just its

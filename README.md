@@ -78,7 +78,17 @@ cp "$(dirname "$(herdr plugin list --json | jq -r '.result.plugins[]|select(.plu
   ~/.config/herdr-automatic-rename/config.sh
 ```
 
-`HERDR_AUTOMATIC_RENAME_CONFIG` overrides that path. [config.example.sh](config.example.sh) documents every knob: numbering per row kind, agent titles, label length, the program lists (shells, ignored commands, custom labels), and Nerd Font icons.
+`HERDR_AUTOMATIC_RENAME_CONFIG` overrides that path. [config.example.sh](config.example.sh) documents every knob: numbering per row kind, workspace display rewrites, agent titles, label length, the program lists (shells, ignored commands, custom labels), and Nerd Font icons.
+
+For example, this shortens a displayed workspace name from `worktree-feature` to `wt-feature` without renaming its directory or Git worktree:
+
+```bash
+WORKSPACE_SUBSTITUTE_SETS=(
+  's|^worktree-|wt-|'
+)
+```
+
+A workspace name entered by hand is unchanged when it differs from the directory-derived name. Herdr does not expose whether a matching name was entered by hand.
 
 ## Actions
 
