@@ -62,6 +62,20 @@
 AR_ROOT="${HERDR_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)}"
 HERDR="${HERDR_BIN_PATH:-herdr}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-automatic-rename"
+# One store per herdr session. Every server numbers its own tabs from w1:t1, so
+# two sessions writing one file overwrite each other's records, and each pass
+# prunes the other session's tabs as closed: a tab whose record is gone reads as
+# renamed by hand on the next pass and opts out for good. A named session
+# (`herdr --session NAME`) keeps its socket under `sessions/NAME/`, which is what
+# ar_herdr_session_dir strips the filename off, so the same variable names the
+# store here: the herdr-invoked pass and the shell hooks both receive it. The
+# default session has no such directory and keeps the store where it always was.
+_ar_sock_dir="${HERDR_SOCKET_PATH:+${HERDR_SOCKET_PATH%/*}}"
+_ar_sock_parent="${_ar_sock_dir%/*}"
+if [ "${_ar_sock_parent##*/}" = "sessions" ] && [ -n "${_ar_sock_dir##*/}" ]; then
+  STATE_DIR="$STATE_DIR/sessions/${_ar_sock_dir##*/}"
+fi
+unset _ar_sock_dir _ar_sock_parent
 STATE_FILE="$STATE_DIR/state.json"
 LOCK_DIR="$STATE_DIR/lock"
 RERUN_FLAG="$STATE_DIR/rerun"
