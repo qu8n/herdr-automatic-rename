@@ -9,6 +9,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 
 SB=$(mktemp -d "${TMPDIR:-/tmp}/hal-session.XXXXXX")
 export XDG_STATE_HOME="$SB/xdg"
+export XDG_CONFIG_HOME="$SB/config"
 # The runner's own pane would otherwise name a session for every case below.
 unset HERDR_SOCKET_PATH HERDR_SESSION
 ENGINE="$here/../automatic-rename.sh"
@@ -56,6 +57,16 @@ check "the socket path wins over the name, as it does for the CLI" \
   "$LEGACY/sessions/home" "$(state_dir_for "$CFG/sessions/home/herdr.sock" work)"
 check "a default-shaped socket is not overridden by the name" \
   "$LEGACY" "$(state_dir_for "$CFG/herdr.sock" work)"
+
+# The files the engine reads beside the socket follow the same rule, or a hand
+# run with only the name set would talk to one server and read another's
+# session.json.
+check "the session dir follows the socket path" \
+  "$CFG/sessions/home" "$(in_env "$CFG/sessions/home/herdr.sock" work 'ar_herdr_session_dir')"
+check "and the name when there is no socket path" \
+  "$CFG/sessions/work" "$(in_env "" work 'ar_herdr_session_dir')"
+check "and the default session's name means the config dir" \
+  "$CFG" "$(in_env "" default 'ar_herdr_session_dir')"
 
 # The lock and the rerun flag follow the store, or two sessions would still
 # refuse each other's passes and raise each other's flags.
@@ -119,6 +130,55 @@ printf '{"w1:t1":{"auto":"nvim","enabled":true}}' >"$LEGACY/state.json"
 in_env "$CFG/herdr.sock" "" 'ar_state_seed'
 check "the root store is never seeded onto itself" "nvim" \
   "$(in_env "$CFG/herdr.sock" "" 'ar_state_get w1:t1 auto')"
+
+# ---- end to end: two sessions through the real reconcile ----
+# The same regression through ar_main against tests/mocks/herdr, so the steps
+# only an executed pass takes (the mkdir of the nested store, the lock, the
+# prune at the end of the pass) are pinned too. Each session has its own
+# fixtures, as each server answers for its own tabs, and both number from w1:t1.
+MOCK="$here/mocks/herdr"
+export HERDR_BIN_PATH="$MOCK" HERDR_MOCK_LOG="$SB/renames.log"
+export HERDR_AUTOMATIC_RENAME_CONFIG="$SB/none.sh"   # absent -> env toggles win
+export HERDR_CONFIG_FILE="$SB/herdr.toml"
+printf 'agent_panel_sort = "spaces"\n' >"$HERDR_CONFIG_FILE"
+export NAME_TABS=1 AUTO_INDEX=0 SHELL_NAME=zsh
+unset HIDE_SHELL HERDR_TAB_ID HERDR_PLUGIN_CONTEXT_JSON
+rm -rf "$LEGACY"
+
+# session_fixtures <name> <label> <program> -> one workspace, one tab, one pane.
+session_fixtures() {
+  local d="$SB/fixtures-$1"
+  mkdir -p "$d"
+  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"api"}]}}' >"$d/workspaces.json"
+  printf '{"result":{"tabs":[{"tab_id":"w1:t1","label":"%s","pane_count":1,"focused":true}]}}' "$2" >"$d/tabs_w1.json"
+  printf '{"result":{"panes":[{"pane_id":"p1","tab_id":"w1:t1","focused":true}]}}' >"$d/panes.json"
+  printf '{"result":{"process_info":{"foreground_process_group_id":100,"foreground_processes":[{"pid":100,"argv0":"%s","cmdline":"%s"}]}}}' "$3" "$3" >"$d/procinfo_p1.json"
+}
+# run_in <name> <event> -> a full pass under that session's socket and fixtures.
+run_in() {
+  : >"$HERDR_MOCK_LOG"
+  HERDR_SOCKET_PATH="$CFG/sessions/$1/herdr.sock" HERDR_MOCK_DIR="$SB/fixtures-$1" \
+    /usr/bin/env bash "$ENGINE" "$2"
+  cat "$HERDR_MOCK_LOG"
+}
+
+session_fixtures work 1 nvim
+check_contains "work names its tab" "$(run_in work tab.focused)" "tab rename w1:t1 nvim"
+check "and records it in its own store" "nvim" \
+  "$(jq -r '."w1:t1".auto' "$LEGACY/sessions/work/state.json" 2>/dev/null)"
+
+session_fixtures home 1 claude
+check_contains "home names its own w1:t1" "$(run_in home tab.focused)" "tab rename w1:t1 claude"
+check "without touching work's record" "nvim" \
+  "$(jq -r '."w1:t1".auto' "$LEGACY/sessions/work/state.json" 2>/dev/null)"
+
+# The label now carries work's own name and the program has changed: the tab is
+# still work's to rename. Under one shared store, home's prune had dropped the
+# record, the label read as typed by hand, and this pass renamed nothing.
+session_fixtures work nvim htop
+check_contains "work goes on naming it after home's pass" "$(run_in work tab.focused)" "tab rename w1:t1 htop"
+check "and no store was left at the root" "no" \
+  "$([ -e "$LEGACY/state.json" ] && printf yes || printf no)"
 
 rm -rf "$SB" 2>/dev/null || true
 t_summary

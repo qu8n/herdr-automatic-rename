@@ -50,8 +50,9 @@
 # exclusion is tracked here: a JSON state file remembers the last base we set
 # per tab_id and whether auto-naming is still enabled for it. Config and state
 # live at FIXED paths (not $HERDR_PLUGIN_{CONFIG,STATE}_DIR) so the herdr-invoked
-# and shell-invoked runs share one store: the preexec/precmd runs are launched by
-# the shell, not herdr, and never receive the HERDR_PLUGIN_* env vars. Needs jq.
+# and shell-invoked runs share the same store, one per herdr session: the
+# preexec/precmd runs are launched by the shell, not herdr, and never receive
+# the HERDR_PLUGIN_* env vars. Needs jq.
 #
 # Targets bash 3.2 (macOS /bin/bash): no associative arrays, no namerefs.
 
@@ -67,8 +68,9 @@ AR_LEGACY_STATE_FILE="$STATE_DIR/state.json"
 # (docs/ARCHITECTURE.md, "Why config and state sit at fixed paths"). The name is
 # read the way the herdr CLI picks its server: from the `sessions/<name>/`
 # directory in $HERDR_SOCKET_PATH whenever that is set, the same directory
-# ar_herdr_session_dir reads, and from $HERDR_SESSION only when it is not. Both
-# reach plugin commands and pane shells alike. A socket path that names no
+# ar_herdr_session_dir reads, and from $HERDR_SESSION only when it is not. herdr
+# injects the socket path into plugin commands and pane shells on purpose; the
+# name reaches both by inheritance from the server. A socket path that names no
 # session directory is the default session's, whatever name the shell inherited.
 # The default session, which herdr also calls `default`, keeps the store here.
 _ar_sock_dir="${HERDR_SOCKET_PATH:+${HERDR_SOCKET_PATH%/*}}"
@@ -921,7 +923,13 @@ ar_herdr_session_dir() {
   if [ -n "${HERDR_SOCKET_PATH:-}" ]; then
     printf '%s' "${HERDR_SOCKET_PATH%/*}"
   else
-    printf '%s/herdr' "${XDG_CONFIG_HOME:-$HOME/.config}"
+    # No socket path: the CLI picks its server from $HERDR_SESSION next, so the
+    # files read here have to come from the same session, or a hand run with
+    # only the name set would talk to one server and read another's session.json.
+    case "${HERDR_SESSION:-}" in
+      "" | default | . | ..) printf '%s/herdr' "${XDG_CONFIG_HOME:-$HOME/.config}" ;;
+      *) printf '%s/herdr/sessions/%s' "${XDG_CONFIG_HOME:-$HOME/.config}" "$HERDR_SESSION" ;;
+    esac
   fi
 }
 
