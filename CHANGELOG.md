@@ -4,6 +4,14 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
 
 ## [Unreleased]
 
+### Fixed
+
+- Two herdr sessions no longer share one state store ([#22](https://github.com/qu8n/herdr-automatic-rename/issues/22)). Every server numbers its tabs from `w1:t1`, so the plugin running under `herdr --session work` and the one under `herdr --session home` wrote the same keys into the same `state.json`, and each full pass pruned the other session's tabs as closed. A tab whose record is gone reads as renamed by hand on the next pass and opts out of naming until reset, which is how a machine running more than one session ended up with every tab frozen on whatever it was called when the other session last ran, and the lock they also shared dropped events on top of that.
+
+  A named session now keeps its store under `sessions/<name>/` inside the state directory, resolved the way the herdr CLI picks its server: from the session directory in the socket path herdr exports to plugin commands and pane environments alike, or from `HERDR_SESSION` when no socket path is set, so the herdr-invoked pass and the shell hooks resolve one file. The default session keeps the store where it always was.
+
+  Upgrading costs nothing in the common case. A named session's store is created once from the owned records of the old shared one, so a tab the plugin was naming goes on being named. A record the shared store got wrong, which on a multi-session machine is most of them, ends where an empty store would put it: a tab whose label matches nothing the store owns is opted out, and the reset action or clearing the label hands it back as before. Nothing removes a session's store when the session is deleted, and the old shared file stays as the default session's; both are safe to delete by hand.
+
 ## [0.8.0] - 2026-08-28
 
 ### Added

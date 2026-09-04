@@ -50,8 +50,9 @@
 # exclusion is tracked here: a JSON state file remembers the last base we set
 # per tab_id and whether auto-naming is still enabled for it. Config and state
 # live at FIXED paths (not $HERDR_PLUGIN_{CONFIG,STATE}_DIR) so the herdr-invoked
-# and shell-invoked runs share one store: the preexec/precmd runs are launched by
-# the shell, not herdr, and never receive the HERDR_PLUGIN_* env vars. Needs jq.
+# and shell-invoked runs share the same store, one per herdr session: the
+# preexec/precmd runs are launched by the shell, not herdr, and never receive
+# the HERDR_PLUGIN_* env vars. Needs jq.
 #
 # Targets bash 3.2 (macOS /bin/bash): no associative arrays, no namerefs.
 
@@ -62,6 +63,32 @@
 AR_ROOT="${HERDR_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)}"
 HERDR="${HERDR_BIN_PATH:-herdr}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-automatic-rename"
+AR_LEGACY_STATE_FILE="$STATE_DIR/state.json"
+# One store per herdr session, because every server numbers its tabs from w1:t1
+# (docs/ARCHITECTURE.md, "Why config and state sit at fixed paths"). The name is
+# read the way the herdr CLI picks its server: from the `sessions/<name>/`
+# directory in $HERDR_SOCKET_PATH whenever that is set, the same directory
+# ar_herdr_session_dir reads, and from $HERDR_SESSION only when it is not. herdr
+# injects the socket path into plugin commands and pane shells on purpose; the
+# name reaches both by inheritance from the server. A socket path that names no
+# session directory is the default session's, whatever name the shell inherited.
+# The default session, which herdr also calls `default`, keeps the store here.
+_ar_sock_dir="${HERDR_SOCKET_PATH:+${HERDR_SOCKET_PATH%/*}}"
+_ar_sock_parent="${_ar_sock_dir%/*}"
+if [ -z "$_ar_sock_dir" ]; then
+  _ar_session="${HERDR_SESSION:-}"
+elif [ "$_ar_sock_parent" != "$_ar_sock_dir" ] && [ "${_ar_sock_parent##*/}" = "sessions" ]; then
+  _ar_session="${_ar_sock_dir##*/}"
+else
+  _ar_session=""
+fi
+# A name is one path segment, never a dot entry: herdr refuses those as session
+# names, and a hand-set socket path must not alias the store onto another dir.
+case "$_ar_session" in
+  "" | default | . | ..) ;;
+  *) STATE_DIR="$STATE_DIR/sessions/$_ar_session" ;;
+esac
+unset _ar_sock_dir _ar_sock_parent _ar_session
 STATE_FILE="$STATE_DIR/state.json"
 LOCK_DIR="$STATE_DIR/lock"
 RERUN_FLAG="$STATE_DIR/rerun"
@@ -431,6 +458,28 @@ ar_unlock() {
   [ "$(cat "$LOCK_DIR/owner" 2>/dev/null)" = "$AR_LOCK_TOKEN" ] || return 0
   rm -f "$LOCK_DIR/owner" 2>/dev/null
   rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+
+# ar_state_seed - a named session's first store starts from the ownership records
+# of the shared store it replaces. Without this an upgrade opts every named tab
+# out: the tab carries a label the empty store never wrote, which is what a hand
+# rename looks like. Only enabled records are copied. A matching one keeps the
+# tab named, a mismatched one opts out exactly as no record would, and an
+# opted-out one is left behind so a placeholder label is adopted as it would be
+# from nothing. Ids this session lacks go on the first prune. The link is what
+# makes the copy safe under a burst of first events: it refuses an existing
+# file, so a pass that already wrote is never covered over.
+ar_state_seed() {
+  [ "$STATE_FILE" != "$AR_LEGACY_STATE_FILE" ] || return 0
+  [ -e "$STATE_FILE" ] && return 0
+  [ -f "$AR_LEGACY_STATE_FILE" ] || return 0
+  local tmp
+  tmp=$(mktemp "$STATE_DIR/.state.XXXXXX") || return 0
+  if jq -c 'with_entries(select(.value.enabled == true))' "$AR_LEGACY_STATE_FILE" > "$tmp" 2>/dev/null \
+     && jq -es 'length == 1 and (.[0] | type == "object")' "$tmp" >/dev/null 2>&1; then
+    ln "$tmp" "$STATE_FILE" 2>/dev/null || true
+  fi
+  rm -f "$tmp"
 }
 
 # ======================================================================
@@ -905,7 +954,13 @@ ar_herdr_session_dir() {
   if [ -n "${HERDR_SOCKET_PATH:-}" ]; then
     printf '%s' "${HERDR_SOCKET_PATH%/*}"
   else
-    printf '%s/herdr' "${XDG_CONFIG_HOME:-$HOME/.config}"
+    # No socket path: the CLI picks its server from $HERDR_SESSION next, so the
+    # files read here have to come from the same session, or a hand run with
+    # only the name set would talk to one server and read another's session.json.
+    case "${HERDR_SESSION:-}" in
+      "" | default | . | ..) printf '%s/herdr' "${XDG_CONFIG_HOME:-$HOME/.config}" ;;
+      *) printf '%s/herdr/sessions/%s' "${XDG_CONFIG_HOME:-$HOME/.config}" "$HERDR_SESSION" ;;
+    esac
   fi
 }
 
@@ -1784,6 +1839,7 @@ ar_main() {
   command -v jq >/dev/null 2>&1 || exit 0
   command -v "$HERDR" >/dev/null 2>&1 || exit 0
   mkdir -p "$STATE_DIR" 2>/dev/null || exit 0
+  ar_state_seed
 
   # Config overrides must load BEFORE naming.sh (its defaults only fill unset vars).
   # The config path is the user's, resolved at runtime, so shellcheck has no file

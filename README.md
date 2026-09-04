@@ -94,7 +94,7 @@ herdr plugin action invoke herdr-automatic-rename.reset
 
 ## Uninstall
 
-Strip the labels first, else `clear`'s renames re-fire the hooks. Then remove the plugin:
+Strip the labels first, else `clear`'s renames re-fire the hooks. The strip reaches one herdr session, the one the shell it runs in belongs to, so run it once per session before removing the plugin. The state directory, `~/.local/state/herdr-automatic-rename/`, can then be deleted:
 
 ```sh
 bash "$(herdr plugin list --json \
