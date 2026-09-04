@@ -62,20 +62,31 @@
 AR_ROOT="${HERDR_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)}"
 HERDR="${HERDR_BIN_PATH:-herdr}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-automatic-rename"
-# One store per herdr session. Every server numbers its own tabs from w1:t1, so
-# two sessions writing one file overwrite each other's records, and each pass
-# prunes the other session's tabs as closed: a tab whose record is gone reads as
-# renamed by hand on the next pass and opts out for good. A named session
-# (`herdr --session NAME`) keeps its socket under `sessions/NAME/`, which is what
-# ar_herdr_session_dir strips the filename off, so the same variable names the
-# store here: the herdr-invoked pass and the shell hooks both receive it. The
-# default session has no such directory and keeps the store where it always was.
+AR_LEGACY_STATE_FILE="$STATE_DIR/state.json"
+# One store per herdr session, because every server numbers its tabs from w1:t1
+# (docs/ARCHITECTURE.md, "Why config and state sit at fixed paths"). The name is
+# read the way the herdr CLI picks its server: from the `sessions/<name>/`
+# directory in $HERDR_SOCKET_PATH whenever that is set, the same directory
+# ar_herdr_session_dir reads, and from $HERDR_SESSION only when it is not. Both
+# reach plugin commands and pane shells alike. A socket path that names no
+# session directory is the default session's, whatever name the shell inherited.
+# The default session, which herdr also calls `default`, keeps the store here.
 _ar_sock_dir="${HERDR_SOCKET_PATH:+${HERDR_SOCKET_PATH%/*}}"
 _ar_sock_parent="${_ar_sock_dir%/*}"
-if [ "${_ar_sock_parent##*/}" = "sessions" ] && [ -n "${_ar_sock_dir##*/}" ]; then
-  STATE_DIR="$STATE_DIR/sessions/${_ar_sock_dir##*/}"
+if [ -z "$_ar_sock_dir" ]; then
+  _ar_session="${HERDR_SESSION:-}"
+elif [ "$_ar_sock_parent" != "$_ar_sock_dir" ] && [ "${_ar_sock_parent##*/}" = "sessions" ]; then
+  _ar_session="${_ar_sock_dir##*/}"
+else
+  _ar_session=""
 fi
-unset _ar_sock_dir _ar_sock_parent
+# A name is one path segment, never a dot entry: herdr refuses those as session
+# names, and a hand-set socket path must not alias the store onto another dir.
+case "$_ar_session" in
+  "" | default | . | ..) ;;
+  *) STATE_DIR="$STATE_DIR/sessions/$_ar_session" ;;
+esac
+unset _ar_sock_dir _ar_sock_parent _ar_session
 STATE_FILE="$STATE_DIR/state.json"
 LOCK_DIR="$STATE_DIR/lock"
 RERUN_FLAG="$STATE_DIR/rerun"
@@ -445,6 +456,28 @@ ar_unlock() {
   [ "$(cat "$LOCK_DIR/owner" 2>/dev/null)" = "$AR_LOCK_TOKEN" ] || return 0
   rm -f "$LOCK_DIR/owner" 2>/dev/null
   rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+
+# ar_state_seed - a named session's first store starts from the ownership records
+# of the shared store it replaces. Without this an upgrade opts every named tab
+# out: the tab carries a label the empty store never wrote, which is what a hand
+# rename looks like. Only enabled records are copied. A matching one keeps the
+# tab named, a mismatched one opts out exactly as no record would, and an
+# opted-out one is left behind so a placeholder label is adopted as it would be
+# from nothing. Ids this session lacks go on the first prune. The link is what
+# makes the copy safe under a burst of first events: it refuses an existing
+# file, so a pass that already wrote is never covered over.
+ar_state_seed() {
+  [ "$STATE_FILE" != "$AR_LEGACY_STATE_FILE" ] || return 0
+  [ -e "$STATE_FILE" ] && return 0
+  [ -f "$AR_LEGACY_STATE_FILE" ] || return 0
+  local tmp
+  tmp=$(mktemp "$STATE_DIR/.state.XXXXXX") || return 0
+  if jq -c 'with_entries(select(.value.enabled == true))' "$AR_LEGACY_STATE_FILE" > "$tmp" 2>/dev/null \
+     && jq -es 'length == 1 and (.[0] | type == "object")' "$tmp" >/dev/null 2>&1; then
+    ln "$tmp" "$STATE_FILE" 2>/dev/null || true
+  fi
+  rm -f "$tmp"
 }
 
 # ======================================================================
@@ -1767,6 +1800,7 @@ ar_main() {
   command -v jq >/dev/null 2>&1 || exit 0
   command -v "$HERDR" >/dev/null 2>&1 || exit 0
   mkdir -p "$STATE_DIR" 2>/dev/null || exit 0
+  ar_state_seed
 
   # Config overrides must load BEFORE naming.sh (its defaults only fill unset vars).
   # The config path is the user's, resolved at runtime, so shellcheck has no file
