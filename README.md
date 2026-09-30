@@ -4,21 +4,17 @@
 
 ## Features
 
-### Before
+No more having to manually name your new tabs or deal with plain numbered tabs:
 
-By default, herdr names new tabs with plain numbers. It's difficult to know what's going on in a tab, especially when you have multiple tabs/agents running across different workspaces.
+`‎ 1 `‎‎‎‎ ‎ `‎ 2 `‎ ‎‎ `‎ 3 `‎‎‎ ‎ ‎ +
 
-`    1    `‎‎‎‎ ‎ ‎ `    2    ` ‎ ‎ ‎‎‎`    3    `‎‎‎ ‎ ‎ +
+This plugin automatically names them either after their foreground process (inspired by [tmux](https://github.com/tmux/tmux)'s `automatic-rename`):
 
-### After
-
-This plugin supercharges your tabs, automatically naming them either after their foreground process, inspired by [tmux](https://github.com/tmux/tmux)'s `automatic-rename`:
-
-`  [1] zsh  `‎‎‎ ‎ ‎ `  [2] nvim  ` ‎ ‎ ‎‎‎`  [3] ssh  `‎‎‎ ‎ ‎ +
+`‎ [1] zsh `‎‎‎ ‎ `‎ [2] nvim ` ‎  ‎‎`‎ [3] ssh `‎‎‎ ‎ ‎ +
 
 Or after the agent session context:
 
-`  [1] Debug transient issue  `‎ ‎ ‎ ‎‎`  [2] Improve test suite  `‎‎‎ ‎ ‎ +
+`‎ [1] Debug transient issue `‎ ‎ ‎ ‎‎`‎ [2] Improve test suite `‎‎‎ ‎ ‎ +
 
 The naming mechanism is highly configurable. See the Configuration section below for more info.
 
