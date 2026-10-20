@@ -982,4 +982,18 @@ check "a control character in the context is scrubbed" "we b › nvim" \
 check "a tab in the context is scrubbed" "we b › nvim" \
   "$(ar_compose "$(printf 'we\tb')" '' 'nvim')"
 
+# ---- ar_border_title: an agent's name on its pane border ----
+check "a named agent's pane shows the name" "reviewer" "$(ar_border_title reviewer claude '')"
+check "an unnamed agent gets no title" "" "$(ar_border_title '' claude '')"
+# herdr draws a reported title above a pane name the user typed, so a label wins.
+check "a pane with a label of its own gets none" "" "$(ar_border_title reviewer claude notes)"
+check "a name that only repeats the kind gets none" "" "$(ar_border_title claude claude '')"
+check "the kind compare ignores ASCII case" "" "$(ar_border_title Codex codex '')"
+check "a name that only starts with the kind still shows" "claude-2" \
+  "$(ar_border_title claude-2 claude '')"
+ar_border_title api codex '' >/dev/null
+check "the title is published for the engine's loop" "api" "$AR_BORDER_TITLE"
+ar_border_title codex codex '' >/dev/null
+check "and cleared when there is none" "" "$AR_BORDER_TITLE"
+
 t_summary

@@ -16,6 +16,7 @@
 #
 # Mutating commands (the whole point of the test) are appended verbatim to
 # $HERDR_MOCK_LOG so the test can assert exactly which renames the engine issued.
+# `pane report-metadata` counts as one: it is how pane border titles are set.
 # A missing query fixture yields a valid-but-empty result so the engine degrades
 # the same way it would against a real herdr that returned nothing.
 
@@ -101,6 +102,12 @@ case "$group" in
         p=""
         while [ $# -gt 0 ]; do case "$1" in --pane) p="$2"; shift 2 ;; *) shift ;; esac; done
         serve "procinfo_$p.json" '{}' ;;
+      # herdr parses these flags by hand and refuses `--flag=value` as an
+      # unknown option, so the mock does too rather than logging a title that
+      # would never have landed.
+      report-metadata)
+        for a in "$@"; do case "$a" in --*=*) exit 2 ;; esac; done
+        printf 'pane report-metadata %s\n' "$*" >>"$log" ;;
     esac ;;
   agent)
     case "$action" in

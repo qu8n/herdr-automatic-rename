@@ -52,6 +52,7 @@ Every function uses the `ar_` prefix.
 - **Hand renames win.** herdr has no auto/manual flag. The plugin records each name it sets. A label that does not match the record was typed by a person, so the plugin stops naming that item until `reset`.
 - **Record only what landed.** A name is recorded only after the rename succeeds. Otherwise a failed rename would look like a hand rename and opt the tab out.
 - **One worker per burst.** A `mkdir` lock with a rerun flag collapses a burst of events into one pass. Actions wait for the lock, since their request cannot be handed to another process.
+- **Borders get a title, not a name.** An agent's name reaches its pane border as display-only metadata tied to the agent's kind, so the pane's own name stays the user's, herdr drops the title when the agent exits, and no record is kept. The trade-off: the plugin compares against the title herdr shows from any source, so another title reporter on an agent pane costs a no-op clear per pass, or the two overwrite each other.
 - **Pure naming.** Rules live apart from herdr and the filesystem so tests can check them as strings.
 - **Mirror herdr, don't guess.** Numbers follow what `alt+N` reaches, so the plugin copies herdr's sidebar rules, including collapse. Where herdr's order is unreadable (agent views, `priority` sort), the plugin strips numbers instead of guessing.
 - **Gate features at runtime.** `min_herdr_version` stays at 0.7.1 and newer features check the version when they run, because a version requirement that is too high stops the plugin from loading at all.
@@ -70,7 +71,7 @@ Local files only.
 
 ## 5. External integrations
 
-- **herdr CLI:** the only API. It reads with `api snapshot` (per-list calls on older herdr) and writes with the `rename` commands. `herdr-plugin.toml` lists the events.
+- **herdr CLI:** the only API. It reads with `api snapshot` (per-list calls on older herdr) and writes with the `rename` commands, plus `pane report-metadata` for the display-only pane border titles. `herdr-plugin.toml` lists the events.
 - **jq:** parses every JSON reply and cleans every string herdr returns.
 - **git:** read from `.git` files. The git binary is never run.
 - **Claude Code:** transcripts in `~/.claude/projects`, read only when needed. `AGENT_TRANSCRIPT=0` turns this off.

@@ -4,6 +4,10 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
 
 ## [Unreleased]
 
+### Added
+
+- `NAME_PANES` shows each agent's herdr name (`herdr agent start <name>`, `herdr agent rename`) on its pane border, on by default. Panes you named yourself and names that only repeat the agent kind are left alone, and `NAME_PANES=0` takes the names back off ([#29](https://github.com/qu8n/herdr-automatic-rename/issues/29), thanks @freivokh).
+
 ## [0.13.1] - 2026-10-17
 
 ### Fixed

@@ -13,6 +13,14 @@
 # leaves tab names alone.
 # NAME_TABS=1
 
+# Show each agent's herdr name (`herdr agent start <name>`, `herdr agent
+# rename`) on its pane border, which herdr draws on split panes. The name is a
+# display-only title, so the pane's own name is never changed. A pane you named
+# yourself keeps that name, and a name that only repeats the agent ("claude") is
+# not shown. A rename shows at the next herdr event. 0 turns this off and takes
+# the names back off at the next event (below herdr 0.7.2, as each agent exits).
+# NAME_PANES=1
+
 # Prefix workspaces and tabs with their 1-9 jump-key number, e.g. "[2] api". 0
 # turns numbering off. Agents get a number only on herdr below 0.7.5, because
 # newer herdr rejects a bracketed agent name.

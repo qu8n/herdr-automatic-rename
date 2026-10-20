@@ -1300,3 +1300,27 @@ ar_format() {
   AR_ACTIVITY=$name
   printf '%s' "$name"
 }
+
+# ar_border_title <agent name> <agent kind> <pane label> -> the title an agent's
+# pane border should carry (NAME_PANES), or "" for none. Also sets
+# AR_BORDER_TITLE, so the engine's per-pane loop reads it without a fork.
+#
+# The name is the one `herdr agent start <name>` or `herdr agent rename` gave the
+# agent, with any "[N] " an older herdr's agent numbering put in front already
+# taken off. herdr draws a reported title above a pane name typed with `pane
+# rename`, so a pane with a label of its own gets none, and that label shows. A
+# name that only repeats the kind ("claude" on a claude pane) gets none either:
+# it says nothing herdr's own agent label would not, and the border stays free
+# for it.
+ar_border_title() {
+  local name=$1 kind
+  AR_BORDER_TITLE=""
+  [ -n "$name" ] && [ -z "$3" ] || return 0
+  ar_case "$2" "$_AR_UPPER" "$_AR_LOWER"
+  kind=$AR_CASE
+  ar_case "$name" "$_AR_UPPER" "$_AR_LOWER"
+  [ "$AR_CASE" = "$kind" ] && return 0
+  # shellcheck disable=SC2034  # read by ar_name_panes in the engine next door
+  AR_BORDER_TITLE=$name
+  printf '%s' "$name"
+}

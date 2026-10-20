@@ -16,6 +16,8 @@ Or after the agent session context:
 
 `‎ [1] Debug transient issue `‎ ‎ ‎ ‎‎`‎ [2] Improve test suite `‎‎‎ ‎ ‎ +
 
+It also puts each agent's herdr name (`herdr agent start reviewer`) on its pane border, so split panes say which agent is which.
+
 The naming mechanism is highly configurable. See the Configuration section below for more info.
 
 ## Quick start

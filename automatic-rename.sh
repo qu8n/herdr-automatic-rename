@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# herdr-automatic-rename - one plugin, two toggleable features:
+# herdr-automatic-rename - one plugin, three toggleable features:
 #
 #   NAME_TABS=1   auto-name each tab after its foreground program, or the shell
 #                 name at a bare prompt (manual renames opt a tab out). Applies
@@ -16,6 +16,8 @@
 #                 only when the panel is grouped-sorted ("priority" sort reorders
 #                 the panel behind an API we can't read, see ar_agent_sort).
 #                 Agent prefixes are stripped in both cases.
+#   NAME_PANES=1  show each named agent's name on its pane border, as a
+#                 display-only title (see ar_name_panes).
 #
 # Naming a kind and switching it off does not merely stop numbering: its pass
 # still runs and strips the prefixes already there, so the change is visible on
@@ -30,10 +32,10 @@
 # the exception, and only because they were already stripped this way whenever
 # NAME_TABS was on.
 #
-# Both default on and are configured in config.sh ($HERDR_AUTOMATIC_RENAME_CONFIG). A
-# single unified reconcile drives both: one pass computes a tab's base name and
-# its "[N]" prefix together and issues one rename per item, so a brand-new tab
-# settles at "[3] zsh" in a single rename with no placeholder flicker.
+# All three default on and are configured in config.sh ($HERDR_AUTOMATIC_RENAME_CONFIG).
+# A single unified reconcile drives them all: one pass computes a tab's base name
+# and its "[N]" prefix together and issues one rename per item, so a brand-new
+# tab settles at "[3] zsh" in a single rename with no placeholder flicker.
 #
 # Invoked several ways, all routing through ar_run:
 #   * herdr [[events]] hooks:     automatic-rename.sh <event.name>
@@ -2330,6 +2332,77 @@ ar_renumber_agents() {
   done
 }
 
+# ar_name_panes [snapshot JSON] [pane list JSON] - show each named agent on its
+# pane border
+# (NAME_PANES). herdr's border shows a reported title, else the pane's own
+# label, else the agent kind, and never the name given by `herdr agent start
+# <name>` or `agent rename`. This reports that name as the pane's title through
+# `pane report-metadata`, which is display-only: the pane's label stays the
+# user's, and the plugin owns no pane name.
+#
+# No record is kept. herdr holds the title per source, so this plugin's title is
+# the only one its clear touches, and the --agent guard ties it to the agent: the
+# title is hidden if another kind takes the pane, and herdr drops it when that
+# agent exits. So only agent panes are asked about. A pane whose title already
+# says what is wanted costs nothing, and a pane that should carry none but shows
+# a title gets this source's title cleared. The compare is against the title
+# herdr shows, whichever source reported it, so another source titling an agent
+# pane costs a no-op clear per pass, or the two overwrite each other at each
+# event. herdr's own integrations report no titles.
+#
+# `agent rename` emits no event, so a renamed agent's border follows at the next
+# one, as a tab name does. herdr-mirror panes are skipped: their title is the
+# remote's (see ar_mirror_pane). The snapshot already in hand is the input when
+# there is one. Without it (herdr below 0.7.2) the pass reads the two lists,
+# reusing a pane list the pass already fetched, and writes nothing if it cannot
+# read both. There, NAME_PANES=0 reads nothing, so a switched-off feature costs
+# no round-trip: its titles go when their agents exit, or with the clear action.
+ar_name_panes() {
+  local json="${1:-}" panes="${2:-}" agents rows pid kind name label title mirror want
+  if [ -z "$json" ]; then
+    [ "$NAME_PANES" = "1" ] || [ "$CLEAR" = "1" ] || return 0
+    [ -n "$panes" ] || panes=$("$HERDR" pane list 2>/dev/null) || return 0
+    agents=$("$HERDR" agent list 2>/dev/null) || return 0
+    json="$panes
+$agents"
+  fi
+  # Slurped, so the snapshot and the two lists read the same: every document
+  # contributes its panes and its agents, wherever its envelope keeps them.
+  rows=$(printf '%s' "$json" | jq -rs "$AR_JQ_CLEAN"'
+    map((.result.snapshot // .snapshot // .result // .) | objects) as $d
+    | ([ $d[].agents // empty | arrays | .[] | select(.pane_id != null)
+         | { key: .pane_id, value: (.name // "") } ] | from_entries) as $names
+    | $d[].panes // empty | arrays | .[]
+    | select(.pane_id != null and (.agent // "") != "")
+    | [ (.pane_id | clean), (.agent | clean), ($names[.pane_id] // "" | clean),
+        (.label | clean), (.title | clean),
+        (any(.foreground_cwd, .cwd; type == "string" and endswith("/.mirror-pane"))
+         | tostring) ]
+    | join([31] | implode)' 2>/dev/null) || return 0
+  while IFS=$AR_ROW_SEP read -r pid kind name label title mirror; do
+    [ -n "$pid" ] && [ "$mirror" = "false" ] || continue
+    want=""
+    if [ "$CLEAR" != "1" ] && [ "$NAME_PANES" = "1" ]; then
+      case "$name" in \[*) name=$(ar_strip_prefix "$name") ;; esac
+      ar_border_title "$name" "$kind" "$label" >/dev/null
+      want=$AR_BORDER_TITLE
+    fi
+    [ "$want" = "$title" ] && continue
+    # Each value goes in its own argument: herdr refuses `--title=<value>` as an
+    # unknown option, and takes the argument after a flag as its value whatever
+    # it starts with.
+    if [ -n "$want" ]; then
+      ar_trace "$pid border title: $want"
+      "$HERDR" pane report-metadata "$pid" --source herdr-automatic-rename \
+        --agent "$kind" --title "$want" >/dev/null 2>&1 || true
+    else
+      ar_trace "$pid border title cleared"
+      "$HERDR" pane report-metadata "$pid" --source herdr-automatic-rename \
+        --clear-title >/dev/null 2>&1 || true
+    fi
+  done <<< "$rows"
+}
+
 # ar_wait_tab_gone <tab_id> - block (bounded ~2s) until a just-closed tab has left
 # herdr's model, so the reconcile that follows never numbers by a stale list.
 # herdr keeps a closing tab in `tab list` until its pane finishes tearing down;
@@ -2465,8 +2538,8 @@ label: $label"
     printf 'trace, the whole pass:\n'
     cat "$AR_TRACE_FILE" 2>/dev/null
   fi
-  printf '\nknobs: NAME_TABS=%s AUTO_INDEX=%s TAB_CONTEXT=%s AGENT_TITLES=%s HIDE_SHELL=%s HOST_PREFIX=%s\n' \
-    "${NAME_TABS:-1}" "${AUTO_INDEX:-1}" "${TAB_CONTEXT:-1}" "${AGENT_TITLES:-1}" "${HIDE_SHELL:-0}" "${HOST_PREFIX:-0}"
+  printf '\nknobs: NAME_TABS=%s NAME_PANES=%s AUTO_INDEX=%s TAB_CONTEXT=%s AGENT_TITLES=%s HIDE_SHELL=%s HOST_PREFIX=%s\n' \
+    "${NAME_TABS:-1}" "${NAME_PANES:-1}" "${AUTO_INDEX:-1}" "${TAB_CONTEXT:-1}" "${AGENT_TITLES:-1}" "${HIDE_SHELL:-0}" "${HOST_PREFIX:-0}"
   if [ -n "$tab" ]; then ar_notify "Doctor: $tab" "$head"
   else ar_notify "Doctor: no tab resolved" "$head"
   fi
@@ -2617,6 +2690,15 @@ ar_reconcile() {
   fi
   if ar_index_pass agents; then
     ar_renumber_agents
+  fi
+  # Names come off the snapshot taken before the agent pass, so an older herdr's
+  # agents may have been renumbered since. That changes no title, since the
+  # "[N] " is stripped. It runs with NAME_PANES=0 too, which is what takes the
+  # titles back off.
+  if [ "$AR_HAVE_SNAPSHOT" = "1" ]; then
+    ar_name_panes "$snap"
+  else
+    ar_name_panes "" "$lpanes"
   fi
   # The force was for this pass. ar_run can loop the reconcile when events land
   # while it runs, and a tab still forced on a later loop is a tab whose opt-out
@@ -2933,6 +3015,7 @@ ar_main() {
   # overrides and their shared default are read straight from the config by
   # ar_index_on and ar_index_explicit.
   : "${NAME_TABS:=1}"
+  : "${NAME_PANES:=1}"
 
   MODE="${1:-event}"
   CLEAR=0
