@@ -1,6 +1,6 @@
 id = "herdr-automatic-rename"
 name = "Herdr Automatic Rename"
-version = "0.13.1"
+version = "0.14.0"
 # min_herdr_version stays at 0.7.1 deliberately. A requirement above the running
 # herdr is a HARD load failure (plugin_requires_newer_herdr), re-checked on every
 # event dispatch, whereas an event name an older herdr does not know is only an

@@ -4,6 +4,8 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-20
+
 ### Added
 
 - `NAME_PANES` shows each agent's herdr name (`herdr agent start <name>`, `herdr agent rename`) on its pane border, on by default. Panes you named yourself and names that only repeat the agent kind are left alone, and `NAME_PANES=0` takes the names back off ([#29](https://github.com/qu8n/herdr-automatic-rename/issues/29), thanks @freivokh).
@@ -253,7 +255,8 @@ First public release.
 - Configuration via `~/.config/herdr-automatic-rename/config.sh` (or `$HERDR_AUTOMATIC_RENAME_CONFIG`), with a documented `config.example.sh`.
 - A self-contained test suite (bash and jq only).
 
-[Unreleased]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/qu8n/herdr-automatic-rename/compare/v0.11.1...v0.12.0
