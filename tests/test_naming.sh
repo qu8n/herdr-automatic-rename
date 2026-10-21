@@ -404,6 +404,20 @@ check "a title that is only a spinner strips to nothing" "" "$(_task "$spinner "
 # the title, which is the byte the naive strip ate.
 check "a multibyte title survives the spinner strip" "$uber" "$(_task "$spinner$uber")"
 check "a multibyte first letter is not eaten" "$uber" "$(_task "$uber")"
+# Codex parks its spinner at the END, after a space, so it flips the label on
+# every frame the same way a leading one did (issue #32).
+check "trailing spinner is stripped" "Research upload tags" \
+  "$(_task "Research upload tags $spinner")"
+check "and a run of them, spaces and all" "Research upload tags" \
+  "$(_task "Research upload tags $spinner $spinner ")"
+# Only a run that stands apart as its own word: punctuation that ends a word is
+# the agent's own wording and stays.
+check "punctuation ending a word survives" "Port to C++" "$(_task 'Port to C++')"
+check "a closing bracket survives" "Fix parser (WIP)" "$(_task 'Fix parser (WIP)')"
+# Spinners are non-ASCII, so an ASCII operator standing as its own word is the
+# agent's subject and stays.
+check "trailing operators survive" "Support && / ||" "$(_task 'Support && / ||')"
+check "a trailing comparison survives" "Compare < and >" "$(_task 'Compare < and >')"
 
 # ---- the brand an agent stamps on its own titles ----
 

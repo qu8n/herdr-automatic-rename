@@ -57,6 +57,20 @@ check "slash is a word break" "build-services-payments" \
   "$(ar_condense_title 'Fix build for services/payments')"
 check "colon is a word break" "ADR-0028-step-3" \
   "$(ar_condense_title 'ADR 0028: step 3')"
+# A kebab-case title is several words, so the cut lands between two of them
+# rather than in the middle of one (issue #32).
+check "hyphen is a word break" "foundation-claude" \
+  "$(MAX_TITLE_LEN=18 ar_condense_title 'foundation-claude-handoff-config')"
+check "a spaced dash is not a word" "parser-urgent" \
+  "$(ar_condense_title 'Fix parser - urgent')"
+# The verb and filler rules still read a hyphenated word whole, so a compound
+# keeps its parts: only the cut sees the hyphen.
+check "a compound's first part is not a lead verb" "build-time-cache-fix" \
+  "$(ar_condense_title 'Build-time cache fix')"
+check "nor are its inner parts filler" "end-to-end-tests-login" \
+  "$(ar_condense_title 'end-to-end tests for login')"
+check "a slug keeps its leading verb" "fix-host-reboot" \
+  "$(MAX_TITLE_LEN=18 ar_condense_title 'fix-host-reboot-cycle')"
 
 # ---- what this function deliberately does NOT do ----
 # A leading glyph and a leading brand are both taken off upstream, by lead and

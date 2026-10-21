@@ -123,9 +123,9 @@ ar_transcript_file() {
 #
 # Both come back through the same jq the pane's own title goes through (`task`),
 # so a topic reaches ar_title_clean in the shape that function documents: cleaned
-# of control characters, with its leading run of non-alphanumerics off, and
-# folded by jq rather than by a byte-wise fold that would mishandle a non-ASCII
-# first letter.
+# of control characters, with its leading run of non-alphanumerics off (and a
+# trailing non-ASCII one standing apart as its own word), and folded by jq rather
+# than by a byte-wise fold that would mishandle a non-ASCII first letter.
 ar_transcript_topic() {
   local row=""
   AR_TRANSCRIPT_TOPIC=""

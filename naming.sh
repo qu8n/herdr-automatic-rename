@@ -772,9 +772,10 @@ ar_compose() {
 #   -> the task the title describes, or "" when it describes no task and the
 #      program name is the better label.
 #
-# The title arrives with its leading run of non-alphanumerics already gone: an
-# agent parks a spinner glyph there while it works, and herdr reports the title
-# with the glyph still on, so a tab would flip between "Task" and "<glyph> Task"
+# The title arrives with its leading run of non-alphanumerics already gone, and
+# a trailing non-ASCII one that stands apart as its own word: an agent parks a
+# spinner glyph at one end while it works, and herdr reports the title with the
+# glyph still on, so a tab would flip between "Task" and "<glyph> Task"
 # on every status change. That strip and the lowercasing happen in the jq that
 # lifts the title off the pane (see AR_JQ_CLEAN), because jq knows Unicode where a
 # byte-wise strip in bash would eat the first letter of "Überprüfung" and a
@@ -891,7 +892,8 @@ ar_condense_title() {
     | ($filler | split(" ")) as $fillraw
     | "^[A-Z0-9]{2,}$" as $ident
     # Separators inside the title are word breaks, not characters, so
-    # "tab/workspace" is two words rather than one long one.
+    # "tab/workspace" is two words rather than one long one. The hyphen is
+    # handled later, at the cut (see below).
     #
     # Nothing strips a leading glyph or a leading brand here, though both reach
     # a title: the engine has already run lead and debrand, the two definitions
@@ -931,6 +933,13 @@ ar_condense_title() {
           elif $case == "lower" then ascii_downcase
           elif test($ident) then .
           else ascii_downcase end)
+    # The hyphen is a word break for the cut only. A kebab-case title read as
+    # one word was cut mid-token ("foundation-claude-") once it ran past the
+    # budget (issue #32), so its parts are taken one at a time. The verb and
+    # filler rules above still read the hyphenated word whole: split before
+    # them, "Build-time cache fix" lost "build" as a verb and "end-to-end"
+    # lost "to" as filler. A dash standing alone splits to nothing and goes.
+    | map(split("-") | map(select(length > 0))) | add // []
     | reduce .[] as $w ({out: "", done: false};
         if .done then .
         elif .out == "" then {out: ($w[:$m]), done: false}

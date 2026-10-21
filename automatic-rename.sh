@@ -105,10 +105,13 @@ CONFIG_FILE="${HERDR_AUTOMATIC_RENAME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/
 
 # `task` is the shape a TITLE arrives in: control characters gone, the leading run
 # of non-alphanumerics gone (an agent parks a spinner glyph there), the agent's own
-# brand gone with it, no trailing space, and inner runs of it collapsed. One
-# normalization, because the refusals in ar_title_clean compare exact strings and
-# the label is what they compared: a title of "Claude Code " used to match no
-# refusal and then be trimmed into a label.
+# brand gone with it, no trailing space, and inner runs of it collapsed. The end
+# loses a trailing run of glyphs too, but only non-ASCII ones standing apart as
+# their own word, since Codex parks its spinner there after a space (issue #32)
+# while "C++" or "&& / ||" is the agent's own wording. One normalization, because
+# the refusals in ar_title_clean compare exact strings and the label is what they
+# compared: a title of "Claude Code " used to match no refusal and then be
+# trimmed into a label.
 #
 # The brand is the argument, because it belongs to the agent in the pane and each
 # lift knows which one that is. `brandmap` turns $AR_TITLE_BRANDS (TITLE_BRANDS,
@@ -149,7 +152,8 @@ def debrand($b): ($b | length) as $n
        and (.[$n:] | test("^([^[:alnum:]]|$)")) then .[$n:] else . end;
 def task($b): clean | lead
   | (if ($b | length) > 0 then debrand($b) | lead else . end)
-  | sub("[[:space:]]+$"; "") | gsub("[[:space:]]+"; " ");
+  | sub("([[:space:]]+[^[:alnum:][:space:][:ascii:]]+)*[[:space:]]*$"; "")
+  | gsub("[[:space:]]+"; " ");
 def taskof($brands; $agent): task($brands[$agent | lc] // "");'
 
 # Those rows are split on the ASCII unit separator rather than a tab, because

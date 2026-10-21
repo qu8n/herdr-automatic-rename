@@ -4,6 +4,11 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
 
 ## [Unreleased]
 
+### Fixed
+
+- A spinner an agent parks at the end of its title, as Codex does, no longer renames the tab on every frame ([#32](https://github.com/qu8n/herdr-automatic-rename/issues/32), thanks @bazhand).
+- `TITLE_CONDENSE` treats a hyphen as a word break, so a kebab-case title is cut between words instead of mid-word ([#32](https://github.com/qu8n/herdr-automatic-rename/issues/32), thanks @bazhand).
+
 ## [0.14.0] - 2026-10-20
 
 ### Added
