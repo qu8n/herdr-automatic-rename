@@ -71,7 +71,7 @@ Local files only.
 
 ## 5. External integrations
 
-- **herdr CLI:** the only API. It reads with `api snapshot` (per-list calls on older herdr) and writes with the `rename` commands, plus `pane report-metadata` for the display-only pane border titles. `herdr-plugin.toml` lists the events.
+- **herdr CLI:** the only API. It reads with `api snapshot` (per-list calls on older herdr) and writes with the `rename` commands, plus `pane report-metadata` for the display-only pane border titles and pane topics. `herdr-plugin.toml` lists the events.
 - **jq:** parses every JSON reply and cleans every string herdr returns.
 - **git:** read from `.git` files. The git binary is never run.
 - **Claude Code:** transcripts in `~/.claude/projects`, read only when needed. `AGENT_TRANSCRIPT=0` turns this off.

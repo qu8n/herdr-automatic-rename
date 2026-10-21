@@ -18,6 +18,8 @@
 #                 Agent prefixes are stripped in both cases.
 #   NAME_PANES=1  show each named agent's name on its pane border, as a
 #                 display-only title (see ar_name_panes).
+#   PANE_TOPICS=1 report each agent pane's topic as the `topic` token, for
+#                 herdr's sidebar (see ar_name_panes).
 #
 # Naming a kind and switching it off does not merely stop numbering: its pass
 # still runs and strips the prefixes already there, so the change is visible on
@@ -1264,6 +1266,27 @@ ar_mirror_tabs() {
   printf ' %s ' "$ids"
 }
 
+# ar_agent_title <who> <agent> <title> <title_lc> <dir_lc> <dir> <session>
+#   -> sets AR_AGENT_TITLE to what the agent says it is working on, or "".
+# <title> is the pane's terminal title after `task`, and <who> is the tab or
+# pane id the traces name. Both the tab name and the pane topic come from here
+# (ar_tab_name, ar_name_panes), so a pane and its tab never disagree on it.
+ar_agent_title() {
+  AR_AGENT_TITLE=$(ar_title_clean "$3" "$4" "$5" "$2")
+  [ -n "$AR_AGENT_TITLE" ] || ar_trace "$1 title refused or absent: [$3]"
+  # The agent has not titled its terminal, or titled it with something that
+  # says nothing. Claude Code derives that title from what the user typed, so a
+  # session opened with a slash command and answered by the agent alone never
+  # gets one -- and its own transcript is where it says what it is doing. Only
+  # reached when there is a session to read and a title that was not enough, so
+  # a titled agent pays nothing for this.
+  if [ -z "$AR_AGENT_TITLE" ] && [ -n "$7" ] && ar_transcript_topic "$2" "$7" "$6"; then
+    AR_AGENT_TITLE=$(ar_title_clean "$AR_TRANSCRIPT_TOPIC" "$AR_TRANSCRIPT_TOPIC_LC" "$5" "$2")
+    [ -n "$AR_AGENT_TITLE" ] && ar_trace "$1 transcript topic used: [$AR_AGENT_TITLE]"
+  fi
+  return 0
+}
+
 # ar_tab_name <tab_id> <pane_count> <focused> <layout_pane> [workspace base]
 #   -> base name on stdout.
 # Returns 1 when the name can't be computed (no resolvable pane, process-info
@@ -1292,20 +1315,9 @@ ar_tab_name() {
   # local work is a wash: one jq over the pane row instead of one over the
   # process-info reply).
   if [ "${AGENT_TITLES:-1}" = "1" ] && [ -n "$AR_PANE_AGENT" ]; then
-    title=$(ar_title_clean "$AR_PANE_TITLE" "$AR_PANE_TITLE_LC" "$AR_PANE_DIR_LC" "$AR_PANE_AGENT")
-    [ -n "$title" ] || ar_trace "$1 title refused or absent: [$AR_PANE_TITLE]"
-    # The agent has not titled its terminal, or titled it with something that
-    # says nothing. Claude Code derives that title from what the user typed, so a
-    # session opened with a slash command and answered by the agent alone never
-    # gets one -- and its own transcript is where it says what it is doing. Only
-    # reached when there is a session to read and a title that was not enough, so
-    # a titled agent pays nothing for this.
-    if [ -z "$title" ] && [ -n "$AR_PANE_SESSION" ] \
-       && ar_transcript_topic "$AR_PANE_AGENT" "$AR_PANE_SESSION" "$AR_PANE_DIR"; then
-      title=$(ar_title_clean "$AR_TRANSCRIPT_TOPIC" "$AR_TRANSCRIPT_TOPIC_LC" \
-        "$AR_PANE_DIR_LC" "$AR_PANE_AGENT")
-      [ -n "$title" ] && ar_trace "$1 transcript topic used: [$title]"
-    fi
+    ar_agent_title "$1" "$AR_PANE_AGENT" "$AR_PANE_TITLE" "$AR_PANE_TITLE_LC" \
+      "$AR_PANE_DIR_LC" "$AR_PANE_DIR" "$AR_PANE_SESSION"
+    title=$AR_AGENT_TITLE
     if [ -n "$title" ]; then
       ar_trace "$1 title accepted: [$title]"
       # What survived is prose, and ar_format truncates it to fit the budget, so
@@ -2206,6 +2218,16 @@ ar_agent_prefix_ok() {
   ar_version_lt "$AR_HERDR_VERSION_MEMO" "0.7.5"
 }
 
+# ar_pane_topics_ok -> 0 when PANE_TOPICS is on and this herdr takes --token.
+# herdr 0.7.4 added custom pane tokens. Below it `report-metadata` refuses the
+# whole call, the border title in it included. An unreadable version counts as
+# too old, for the same reason ar_agent_prefix_ok gives.
+ar_pane_topics_ok() {
+  [ "$PANE_TOPICS" = "1" ] || return 1
+  ar_herdr_version >/dev/null || return 1
+  ! ar_version_lt "$AR_HERDR_VERSION_MEMO" "0.7.4"
+}
+
 # ar_agent_sort -> "priority" or "spaces" (grouped). herdr renders the agent panel
 # in its agent_panel_sort order: "spaces"/"workspaces" (grouped by space) or
 # "priority" (attention queue). cmd+alt+N follows that VISIBLE order, but the CLI
@@ -2361,10 +2383,20 @@ ar_renumber_agents() {
 # reusing a pane list the pass already fetched, and writes nothing if it cannot
 # read both. There, NAME_PANES=0 reads nothing, so a switched-off feature costs
 # no round-trip: its titles go when their agents exit, or with the clear action.
+#
+# The same pass reports each agent pane's topic (PANE_TOPICS) as the `topic`
+# token, which herdr's sidebar can show with `$topic`. A tab carries one topic
+# and a pane one agent, so in a tab of two agents the sidebar row of the one
+# the tab is not named after showed the other's work (issue #32). The topic is
+# what the tab name would say for that pane: ar_agent_title, condensed under
+# TITLE_CONDENSE. It is compared against the token herdr shows, as the title is,
+# and both go in one call.
 ar_name_panes() {
   local json="${1:-}" panes="${2:-}" agents rows pid kind name label title mirror want
+  local ttl ttl_lc dir_lc dir session topic topic_want args topics=0
+  ar_pane_topics_ok && topics=1
   if [ -z "$json" ]; then
-    [ "$NAME_PANES" = "1" ] || [ "$CLEAR" = "1" ] || return 0
+    [ "$NAME_PANES" = "1" ] || [ "$topics" = "1" ] || [ "$CLEAR" = "1" ] || return 0
     [ -n "$panes" ] || panes=$("$HERDR" pane list 2>/dev/null) || return 0
     agents=$("$HERDR" agent list 2>/dev/null) || return 0
     json="$panes
@@ -2372,18 +2404,29 @@ $agents"
   fi
   # Slurped, so the snapshot and the two lists read the same: every document
   # contributes its panes and its agents, wherever its envelope keeps them.
-  rows=$(printf '%s' "$json" | jq -rs "$AR_JQ_CLEAN"'
-    map((.result.snapshot // .snapshot // .result // .) | objects) as $d
+  # The title facts are the ones ar_pane_facts reads for a tab, through the same
+  # `task`, so the topic and the tab name start from one string.
+  rows=$(printf '%s' "$json" | jq -rs --arg brands "${AR_TITLE_BRANDS:-}" \
+    "$AR_JQ_CLEAN$AR_JQ_TASK"'
+    ($brands | brandmap) as $brand
+    | map((.result.snapshot // .snapshot // .result // .) | objects) as $d
     | ([ $d[].agents // empty | arrays | .[] | select(.pane_id != null)
          | { key: .pane_id, value: (.name // "") } ] | from_entries) as $names
     | $d[].panes // empty | arrays | .[]
     | select(.pane_id != null and (.agent // "") != "")
+    | .agent as $kind
+    | (.terminal_title_stripped // .terminal_title | taskof($brand; $kind)) as $t
+    | ((.foreground_cwd // .cwd) | clean) as $dir
     | [ (.pane_id | clean), (.agent | clean), ($names[.pane_id] // "" | clean),
         (.label | clean), (.title | clean),
         (any(.foreground_cwd, .cwd; type == "string" and endswith("/.mirror-pane"))
-         | tostring) ]
+         | tostring),
+        $t, ($t | ascii_downcase),
+        (($dir | split("/") | last) // "" | ascii_downcase), $dir,
+        (.agent_session.value | clean), (.tokens.topic | clean) ]
     | join([31] | implode)' 2>/dev/null) || return 0
-  while IFS=$AR_ROW_SEP read -r pid kind name label title mirror; do
+  while IFS=$AR_ROW_SEP read -r pid kind name label title mirror \
+      ttl ttl_lc dir_lc dir session topic; do
     [ -n "$pid" ] && [ "$mirror" = "false" ] || continue
     want=""
     if [ "$CLEAR" != "1" ] && [ "$NAME_PANES" = "1" ]; then
@@ -2391,19 +2434,52 @@ $agents"
       ar_border_title "$name" "$kind" "$label" >/dev/null
       want=$AR_BORDER_TITLE
     fi
-    [ "$want" = "$title" ] && continue
+    topic_want=""
+    if [ "$CLEAR" != "1" ] && [ "$topics" = "1" ] && [ "${AGENT_TITLES:-1}" = "1" ]; then
+      ar_agent_title "$pid" "$kind" "$ttl" "$ttl_lc" "$dir_lc" "$dir" "$session"
+      topic_want=$AR_AGENT_TITLE
+      # No reserve: no glyph or name prefix shares the token.
+      if [ -n "$topic_want" ] && [ "${TITLE_CONDENSE:-0}" = "1" ]; then
+        ttl=$(ar_condense_title "$topic_want")
+        [ -n "$ttl" ] && topic_want=$ttl
+      fi
+      # herdr keeps the first 80 characters of a token and drops the whitespace
+      # that leaves at the end. Sending more never matches what it shows, and
+      # goes out again on every event. ${#} counts bytes under a C locale, which
+      # is never fewer than characters, so the jq runs only where it may cut.
+      if [ "${#topic_want}" -gt 80 ]; then
+        topic_want=$(printf '%s' "$topic_want" | jq -Rrs '.[:80] | sub("[[:space:]]+$"; "")')
+      fi
+    fi
+    [ "$want" = "$title" ] && [ "$topic_want" = "$topic" ] && continue
     # Each value goes in its own argument: herdr refuses `--title=<value>` as an
     # unknown option, and takes the argument after a flag as its value whatever
-    # it starts with.
-    if [ -n "$want" ]; then
-      ar_trace "$pid border title: $want"
-      "$HERDR" pane report-metadata "$pid" --source herdr-automatic-rename \
-        --agent "$kind" --title "$want" >/dev/null 2>&1 || true
-    else
-      ar_trace "$pid border title cleared"
-      "$HERDR" pane report-metadata "$pid" --source herdr-automatic-rename \
-        --clear-title >/dev/null 2>&1 || true
+    # it starts with. --agent ties what is set to the agent, so herdr drops it
+    # when the agent exits; a clear needs no such tie.
+    args=()
+    if [ "$want" != "$title" ]; then
+      if [ -n "$want" ]; then
+        ar_trace "$pid border title: $want"
+        args+=(--title "$want")
+      else
+        ar_trace "$pid border title cleared"
+        args+=(--clear-title)
+      fi
     fi
+    if [ "$topic_want" != "$topic" ]; then
+      if [ -n "$topic_want" ]; then
+        ar_trace "$pid topic: $topic_want"
+        args+=(--token "topic=$topic_want")
+      else
+        ar_trace "$pid topic cleared"
+        args+=(--clear-token topic)
+      fi
+    fi
+    if [ -n "$want" ] || [ -n "$topic_want" ]; then
+      args=(--agent "$kind" "${args[@]}")
+    fi
+    "$HERDR" pane report-metadata "$pid" --source herdr-automatic-rename \
+      "${args[@]}" >/dev/null 2>&1 || true
   done <<< "$rows"
 }
 
@@ -2542,8 +2618,8 @@ label: $label"
     printf 'trace, the whole pass:\n'
     cat "$AR_TRACE_FILE" 2>/dev/null
   fi
-  printf '\nknobs: NAME_TABS=%s NAME_PANES=%s AUTO_INDEX=%s TAB_CONTEXT=%s AGENT_TITLES=%s HIDE_SHELL=%s HOST_PREFIX=%s\n' \
-    "${NAME_TABS:-1}" "${NAME_PANES:-1}" "${AUTO_INDEX:-1}" "${TAB_CONTEXT:-1}" "${AGENT_TITLES:-1}" "${HIDE_SHELL:-0}" "${HOST_PREFIX:-0}"
+  printf '\nknobs: NAME_TABS=%s NAME_PANES=%s PANE_TOPICS=%s AUTO_INDEX=%s TAB_CONTEXT=%s AGENT_TITLES=%s HIDE_SHELL=%s HOST_PREFIX=%s\n' \
+    "${NAME_TABS:-1}" "${NAME_PANES:-1}" "${PANE_TOPICS:-1}" "${AUTO_INDEX:-1}" "${TAB_CONTEXT:-1}" "${AGENT_TITLES:-1}" "${HIDE_SHELL:-0}" "${HOST_PREFIX:-0}"
   if [ -n "$tab" ]; then ar_notify "Doctor: $tab" "$head"
   else ar_notify "Doctor: no tab resolved" "$head"
   fi
@@ -3020,6 +3096,7 @@ ar_main() {
   # ar_index_on and ar_index_explicit.
   : "${NAME_TABS:=1}"
   : "${NAME_PANES:=1}"
+  : "${PANE_TOPICS:=1}"
 
   MODE="${1:-event}"
   CLEAR=0

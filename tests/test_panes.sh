@@ -25,7 +25,7 @@ setup() {
   export HERDR_CONFIG_FILE="$SB/herdr.toml"
   export HERDR_SOCKET_PATH="$SB/herdr.sock"
   export NAME_TABS=0 AUTO_INDEX=0
-  unset NAME_PANES HERDR_MOCK_VERSION HERDR_MOCK_NO_VERSION HERDR_MOCK_FAIL_VERB
+  unset NAME_PANES PANE_TOPICS TITLE_CONDENSE HERDR_MOCK_VERSION HERDR_MOCK_NO_VERSION HERDR_MOCK_FAIL_VERB
   unset AUTO_INDEX_WORKSPACES AUTO_INDEX_TABS AUTO_INDEX_AGENTS
   unset HERDR_TAB_ID HERDR_PANE_ID HERDR_PLUGIN_CONTEXT_JSON
 }
@@ -111,9 +111,10 @@ teardown
 
 # Switched off, the per-list path reads nothing at all, so it cannot clear: the
 # titles go as their agents exit. The clear action still reads and clears.
+# PANE_TOPICS reads the same lists, so both are off.
 setup
 list_fixtures
-export NAME_PANES=0
+export NAME_PANES=0 PANE_TOPICS=0
 run_event pane.focused
 check "off on the per-list path makes no call" "" "$(log)"
 teardown
@@ -182,6 +183,119 @@ JSON
 run_event pane.focused
 check "a numbered name shows without its number" \
 "pane report-metadata w1:p1 $SRC --agent claude --title reviewer" "$(log)"
+teardown
+
+# ======================================================================
+# Scenario 5: PANE_TOPICS. Each agent pane gets its own topic as the `topic`
+#   token, so the sidebar can show what EACH agent works on, not only the one
+#   its tab is named after (issue #32). `tokens` is what herdr shows now.
+#   q1 a title with a trailing spinner      -> topic set, spinner gone
+#   q2 a topic that already matches         -> left alone
+#   q3 a title that says nothing, old topic -> topic cleared
+#   q4 named, and titled                    -> one call carries both
+#   q5 a herdr-mirror pane                  -> the remote's, left alone
+# ======================================================================
+topics_json() {
+  cat <<'JSON'
+{"result":{"snapshot":{
+  "workspaces":[{"workspace_id":"w1","label":"api"}],
+  "tabs":[],
+  "panes":[
+    {"pane_id":"w1:q1","tab_id":"w1:t1","agent":"codex","cwd":"/home/u/api",
+     "terminal_title_stripped":"Research upload tags ⠋"},
+    {"pane_id":"w1:q2","tab_id":"w1:t1","agent":"opencode","cwd":"/home/u/api",
+     "terminal_title_stripped":"Greeting and quick check-in",
+     "tokens":{"topic":"Greeting and quick check-in"}},
+    {"pane_id":"w1:q3","tab_id":"w1:t1","agent":"claude","cwd":"/home/u/api",
+     "terminal_title_stripped":"Claude Code","tokens":{"topic":"old"}},
+    {"pane_id":"w1:q4","tab_id":"w1:t1","agent":"claude","cwd":"/home/u/api",
+     "terminal_title_stripped":"Investigate why the nightly ETL job drops rows"},
+    {"pane_id":"w1:q5","tab_id":"w1:t1","agent":"claude","cwd":"/home/u/.mirror-pane",
+     "terminal_title_stripped":"Remote work"}
+  ],
+  "agents":[
+    {"pane_id":"w1:q4","agent":"claude","name":"etl"}
+  ]
+}}}
+JSON
+}
+
+setup
+topics_json | fixture snapshot.json
+run_event pane.focused
+check "each agent pane gets its own topic" \
+"pane report-metadata w1:q1 $SRC --agent codex --token topic=Research upload tags
+pane report-metadata w1:q3 $SRC --clear-token topic
+pane report-metadata w1:q4 $SRC --agent claude --title etl --token topic=Investigate why the nightly ETL job drops rows" \
+  "$(log)"
+teardown
+
+# herdr 0.7.4 added --token. Below it, herdr refuses the whole call, so the
+# border title goes alone and no topic is asked for. Nor does it show tokens.
+setup
+topics_json | jq 'del(.result.snapshot.panes[].tokens)' | fixture snapshot.json
+export HERDR_MOCK_VERSION=0.7.3
+run_event pane.focused
+check "below herdr 0.7.4 the title goes alone" \
+  "pane report-metadata w1:q4 $SRC --agent claude --title etl" "$(log)"
+teardown
+
+# herdr keeps the first 80 characters of a token and drops the whitespace that
+# leaves at the end, so a longer topic is sent as herdr will store it. Sent
+# whole, it never matched what herdr showed and went out again on every event.
+long=$(printf 'abcd %.0s' $(seq 1 20)); long=${long% }
+stored=$(printf 'abcd %.0s' $(seq 1 16)); stored=${stored% }
+setup
+fixture snapshot.json <<JSON
+{"result":{"snapshot":{"workspaces":[],"tabs":[],"panes":[
+  {"pane_id":"w1:q1","tab_id":"w1:t1","agent":"codex","cwd":"/home/u/api",
+   "terminal_title_stripped":"$long"},
+  {"pane_id":"w1:q2","tab_id":"w1:t1","agent":"codex","cwd":"/home/u/api",
+   "terminal_title_stripped":"$long","tokens":{"topic":"$stored"}}
+],"agents":[]}}}
+JSON
+run_event pane.focused
+check "a long topic is sent as herdr stores it, and not again" \
+  "pane report-metadata w1:q1 $SRC --agent codex --token topic=$stored" "$(log)"
+teardown
+
+# TITLE_CONDENSE shortens the topic the same way it shortens a tab name.
+setup
+topics_json | fixture snapshot.json
+export TITLE_CONDENSE=1
+run_event pane.focused
+check_contains "a condensed title is the topic" "$(log)" \
+  "pane report-metadata w1:q4 $SRC --agent claude --title etl --token topic=nightly-ETL-job-drops-rows"
+teardown
+
+# The per-list path reads the same facts off the pane list.
+setup
+topics_json | jq '{result:{panes:.result.snapshot.panes}}' | fixture panes.json
+topics_json | jq '{result:{agents:.result.snapshot.agents}}' | fixture agents.json
+run_event pane.focused
+check_contains "the per-list path sets topics too" "$(log)" \
+  "pane report-metadata w1:q1 $SRC --agent codex --token topic=Research upload tags"
+teardown
+
+# Switched off, and with the clear action, the topics come back off. NAME_PANES
+# is off here so only the topic writes are in the log.
+setup
+topics_json | fixture snapshot.json
+export PANE_TOPICS=0 NAME_PANES=0
+run_event pane.focused
+check "off clears every topic, and sets none" \
+"pane report-metadata w1:q2 $SRC --clear-token topic
+pane report-metadata w1:q3 $SRC --clear-token topic" "$(log)"
+teardown
+
+setup
+topics_json | fixture snapshot.json
+export NAME_PANES=0
+run_event --clear
+out=$(log)
+check_contains "the clear action clears topics too" "$out" \
+  "pane report-metadata w1:q2 $SRC --clear-token topic"
+check_absent "and sets none" "$out" "--token "
 teardown
 
 t_summary

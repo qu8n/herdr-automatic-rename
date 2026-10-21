@@ -98,6 +98,18 @@ When you create a new tab, herdr prompts you to give it a name. Custom tab names
 
 See [herdr's integrations docs](https://herdr.dev/docs/integrations/) for installation details. This lets herdr detect an agent natively instead of by reading the screen, which makes for agent tab naming more effective.
 
+**3. Show each agent's own topic in the sidebar.**
+
+```toml
+# ~/.config/herdr/config.toml
+[ui.sidebar.agents]
+rows = [
+  ["state_icon", { token = "$topic", bold = true }],
+]
+```
+
+A tab name follows one agent, so in a tab with two agents the sidebar shows one agent's work on both rows. The plugin gives every agent pane its own topic, and `$topic` shows it. `PANE_TOPICS=0` turns this off.
+
 ## Configuration (optional)
 
 To customize, create your config file at `~/.config/herdr-automatic-rename/config.sh` (or point `HERDR_AUTOMATIC_RENAME_CONFIG` elsewhere). See [config.example.sh](config.example.sh) for the full configuration details. Every setting has a default, so you only need to set what you'd like to change.

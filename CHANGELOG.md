@@ -4,6 +4,10 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
 
 ## [Unreleased]
 
+### Added
+
+- `PANE_TOPICS` gives each agent pane its own topic as the `topic` token, on by default, so herdr's sidebar can show what every agent in a tab works on with `$topic` ([#32](https://github.com/qu8n/herdr-automatic-rename/issues/32), thanks @bazhand).
+
 ### Fixed
 
 - A spinner an agent parks at the end of its title, as Codex does, no longer renames the tab on every frame ([#32](https://github.com/qu8n/herdr-automatic-rename/issues/32), thanks @bazhand).
